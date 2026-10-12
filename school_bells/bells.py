@@ -165,10 +165,10 @@ def skipped_bells(state, now, rung):
             and b.get('enabled', True) and b.get('skip_on') == date]
 
 
-def next_occurrence(bell, now):
+def next_occurrence(bell, now, from_tomorrow=False):
     """Return the ISO date of the bell's next ring after now's minute, ignoring any skip."""
     current = now.strftime('%H:%M')
-    for offset in range(8):
+    for offset in range(1 if from_tomorrow else 0, 8):
         day = (now + timedelta(days=offset)).date()
         if DAYS[day.weekday()] in bell['days'] and (offset > 0 or bell['time'] > current):
             return day.isoformat()
@@ -251,7 +251,8 @@ class Store:
             bell = next((b for b in updated if b['id'] == bell_id), None)
             if bell is None:
                 raise KeyError(bell_id)
-            bell['skip_on'] = next_occurrence(bell, now) if skip else None
+            # On a held day, today's ring won't happen anyway, so skip the next real one.
+            bell['skip_on'] = next_occurrence(bell, now, from_tomorrow=is_held(self._state, now)) if skip else None
             new = dict(self._state, bells=updated)
             save_state(self._path, new)
             self._state = new

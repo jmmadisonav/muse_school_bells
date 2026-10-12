@@ -745,8 +745,12 @@ function openEditor(id) {
 }
 
 async function setEnabled(bell, enabled) {
-  await saveBells(state.bells.map((b) => (b.id === bell.id ? { ...b, enabled } : b)));
-  await refresh();
+  try {
+    await saveBells(state.bells.map((b) => (b.id === bell.id ? { ...b, enabled } : b)));
+  } finally {
+    rendered.bells = null;  // rebuild from the controller's state, so a failed save doesn't leave the box wrong
+    await refresh();
+  }
 }
 
 async function setSkip(id, skip) {

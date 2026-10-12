@@ -50,3 +50,18 @@ def test_old_entries_are_pruned_at_startup_and_on_a_new_day(tmp_path, log):
 
 def test_missing_file_is_empty(tmp_path, log):
     assert history.History(str(tmp_path / 'none.jsonl'), log).entries() == []
+
+
+def test_corrupt_bytes_do_not_stop_startup_or_recording(tmp_path, log):
+    path = tmp_path / 'history.jsonl'
+    path.write_bytes(b'\xff\xfe not utf-8\n')
+    h = history.History(str(path), log, clock=Clock(NOW))
+    assert h.entries() == []
+    h.record('page', 'x.wav')
+    assert [e['sound'] for e in h.entries()] == ['x.wav']
+
+
+def test_record_never_raises(tmp_path, log):
+    h = history.History(str(tmp_path / 'no-such-dir' / 'history.jsonl'), log, clock=Clock(NOW))
+    h.record('page', 'x.wav')
+    assert log.errors

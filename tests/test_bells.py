@@ -233,3 +233,10 @@ def test_store_set_skip(tmp_path, log):
     assert store.set_skip('r1', False, datetime(2026, 10, 12, 11, 30))['skip_on'] is None
     with pytest.raises(KeyError):
         store.set_skip('nope', True, MON_1100)
+
+
+def test_skip_next_on_a_held_day_skips_the_next_real_ring(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    store.set_bells([bell(id='r1')])
+    store.set_held(True, date(2026, 10, 12))
+    assert store.set_skip('r1', True, datetime(2026, 10, 12, 9, 0))['skip_on'] == '2026-10-13'

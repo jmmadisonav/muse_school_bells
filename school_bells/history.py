@@ -19,7 +19,17 @@ class History:
             self._prune_locked()
 
     def record(self, source, sound, result='played', label='', error=''):
-        """Add an entry. source: scheduled, ring_now, test_tone, page, or touch_point."""
+        """Add an entry. source: scheduled, ring_now, test_tone, page, or touch_point.
+
+        Logging is best-effort: a failure here is logged and never reaches the caller,
+        so the bell log can't stop a bell from ringing.
+        """
+        try:
+            self._record(source, sound, result, label, error)
+        except Exception as e:
+            self._log.error('Could not write the bell log: %r' % e)
+
+    def _record(self, source, sound, result, label, error):
         now = self._clock()
         entry = {'time': now.isoformat(timespec='seconds'), 'source': source, 'label': label,
                  'sound': sound, 'result': result, 'error': error}
@@ -43,9 +53,9 @@ class History:
 
     def _read_locked(self):
         try:
-            with open(self._path, encoding='utf-8') as f:
+            with open(self._path, encoding='utf-8', errors='replace') as f:
                 lines = f.readlines()
-        except OSError:
+        except (OSError, ValueError):
             return []
         result = []
         for line in lines:
