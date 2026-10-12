@@ -191,12 +191,15 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                 raise bells.ValidationError('Settings must be a JSON object')
             if 'held' in body and not isinstance(body['held'], bool):
                 raise bells.ValidationError('held must be true or false')
+            before = store.get()
             others = {k: v for k, v in body.items() if k != 'held'}
             if others:
                 store.set_settings(others)
             if 'held' in body:
                 store.set_held(body['held'], clock().date())
             state = store.get()
+            if history is not None:
+                history.record_setting_changes('page', before, state, clock())
             self._send_json(200, {'enabled': state['enabled'], 'master_volume': state['master_volume'],
                                   'held': bells.is_held(state, clock()),
                                   'time_format': state['time_format']})
@@ -209,6 +212,9 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                 bell = store.set_skip(bell_id, body.get('skip'), clock())
             except KeyError:
                 return self._error(404, 'No bell with id %s' % bell_id)
+            if history is not None:
+                history.record('page', bell['sound'], 'skip_set' if bell['skip_on'] else 'skip_cleared',
+                               label=bell['label'] or bell['time'], detail=bell['skip_on'] or '')
             self._send_json(200, bell)
 
         def _play_logged(self, source, path, gain, sound, label=''):
@@ -245,8 +251,11 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             body = self._read_json()
             if not isinstance(body, dict):
                 raise bells.ValidationError('Body must be {"bells": [...]}')
+            before = store.get()['bells']
             clean = store.set_bells(body.get('bells'),
                                     lambda name: sounds.sound_exists(sounds_dir, name))
+            if history is not None:
+                history.record_bell_changes('page', before, clean)
             self._send_json(200, {'bells': clean})
 
         def _upload(self, query):

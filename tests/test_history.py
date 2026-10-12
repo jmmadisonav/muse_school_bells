@@ -20,7 +20,7 @@ def test_record_and_entries_newest_first(tmp_path, log):
     h.record('page', 'x.wav', result='failed', error='The USB audio adapter is not connected')
     first, second = h.entries()
     assert first == {'time': '2026-10-12T11:00:05', 'source': 'page', 'label': '', 'sound': 'x.wav',
-                     'result': 'failed', 'error': 'The USB audio adapter is not connected'}
+                     'result': 'failed', 'error': 'The USB audio adapter is not connected', 'detail': ''}
     assert second['source'] == 'scheduled' and second['label'] == 'Recess' and second['result'] == 'played'
 
 
@@ -65,3 +65,24 @@ def test_record_never_raises(tmp_path, log):
     h = history.History(str(tmp_path / 'no-such-dir' / 'history.jsonl'), log, clock=Clock(NOW))
     h.record('page', 'x.wav')
     assert log.errors
+
+
+def test_setting_changes_are_logged_only_when_they_change(tmp_path, log):
+    import bells
+    h = history.History(str(tmp_path / 'history.jsonl'), log, clock=Clock(NOW))
+    before = bells.default_state()
+    h.record_setting_changes('page', before, dict(before, enabled=False, held_on='2026-10-12'), NOW)
+    h.record_setting_changes('page', before, before, NOW)
+    assert sorted(e['result'] for e in h.entries()) == ['bells_off', 'held']
+    h.record_setting_changes('touch_point', dict(before, held_on='2026-10-12'), before, NOW)
+    assert (h.entries()[0]['source'], h.entries()[0]['result']) == ('touch_point', 'resumed')
+
+
+def test_bell_changes_log_on_and_off_for_existing_bells_only(tmp_path, log):
+    h = history.History(str(tmp_path / 'history.jsonl'), log, clock=Clock(NOW))
+    old = [{'id': 'a', 'label': 'Recess', 'time': '11:00', 'sound': 'r.wav', 'enabled': True},
+           {'id': 'b', 'label': '', 'time': '12:00', 'sound': 'l.wav', 'enabled': False}]
+    new = [dict(old[0], enabled=False), dict(old[1], enabled=True),
+           {'id': 'c', 'label': 'New', 'time': '13:00', 'sound': 'n.wav', 'enabled': False}]
+    h.record_bell_changes('page', old, new)
+    assert sorted((e['label'], e['result']) for e in h.entries()) == [('12:00', 'enabled'), ('Recess', 'disabled')]

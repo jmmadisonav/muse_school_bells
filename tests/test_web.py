@@ -280,3 +280,21 @@ def test_skip_endpoint(app):
     assert call(app, 'POST', '/api/bells/r1/skip', {'skip': False})[1]['skip_on'] is None
     assert call(app, 'POST', '/api/bells/nope/skip', {'skip': True})[0] == 404
     assert call(app, 'POST', '/api/bells/r1/skip', {'skip': 'yes'})[0] == 400
+
+
+def test_schedule_changes_are_logged(app):
+    upload(app, 'recess.wav', make_wav(0.1))
+    call(app, 'PUT', '/api/bells', {'bells': [dict(RECESS, id='r1')]})
+    [b] = app.store.get()['bells']
+    call(app, 'PUT', '/api/bells', {'bells': [dict(b, enabled=False)]})
+    call(app, 'PUT', '/api/bells', {'bells': [dict(b, enabled=True)]})
+    call(app, 'POST', '/api/bells/r1/skip', {'skip': True})
+    call(app, 'POST', '/api/bells/r1/skip', {'skip': False})
+    call(app, 'PUT', '/api/settings', {'held': True})
+    call(app, 'PUT', '/api/settings', {'held': True})
+    call(app, 'PUT', '/api/settings', {'enabled': False, 'held': False})
+    entries = call(app, 'GET', '/api/history')[1]['entries']
+    results = [e['result'] for e in reversed(entries)]
+    assert results == ['disabled', 'enabled', 'skip_set', 'skip_cleared', 'held', 'bells_off', 'resumed']
+    skip = next(e for e in entries if e['result'] == 'skip_set')
+    assert (skip['source'], skip['label'], skip['detail']) == ('page', 'Recess', '2026-10-12')

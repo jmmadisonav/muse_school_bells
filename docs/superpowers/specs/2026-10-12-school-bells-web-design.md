@@ -458,6 +458,15 @@ The footer no longer names Madison Group Enterprises.
 - **API:** `GET /api/history` returns `{"entries": [...]}`, newest first.
 - **Log tab:** a new tab lists entries grouped by day, with failures shown in
   red.
+- **Schedule changes:** the log also records changes to what rings, from the
+  page (`source` `page`) or another MUSE program (`touch_point`). Changes show
+  in grey. Each entry has a `detail` field, which holds the skipped date for
+  `skip_set`. The `result` values are:
+  - `enabled` or `disabled`: an existing bell turned on or off. Adding or
+    deleting a bell isn't logged.
+  - `skip_set` or `skip_cleared`: a skip set or removed.
+  - `held` or `resumed`: bells held for today, or resumed.
+  - `bells_off` or `bells_on`: the master switch turned off or on.
 
 ### Per-bell disable and skip
 

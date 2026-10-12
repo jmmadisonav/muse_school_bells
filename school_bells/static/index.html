@@ -177,7 +177,7 @@
   .log-row .t { font-variant-numeric: tabular-nums; }
   .log-row .src { color: var(--grey); }
   .log-row.failed .res { color: var(--red); }
-  .log-row.skipped .res { color: var(--muted); }
+  .log-row.skipped .res, .log-row.change .res { color: var(--muted); }
   @media (max-width: 700px) { .log-row { grid-template-columns: 72px minmax(0, 1fr); row-gap: 2px; } }
   .choice { display: flex; align-items: center; gap: 10px; padding: 6px 0; cursor: pointer; }
   .choice input { width: 18px; height: 18px; accent-color: var(--red); margin: 0; }
@@ -329,7 +329,7 @@
       <div class="panel full corner">
         <div class="panel-head">
           <h2>Bell log<span class="dot">.</span></h2>
-          <div class="meta">Every playback in the last 30 days</div>
+          <div class="meta">Playback and schedule changes in the last 30 days</div>
         </div>
         <div id="log-list"></div>
       </div>
@@ -789,8 +789,19 @@ function renderSounds() {
   $('#sound-list').replaceChildren(...rows);
 }
 
-const SOURCES = { scheduled: 'Scheduled', ring_now: 'Ring now', test_tone: 'Test tone', page: 'Played from page',
+const SOURCES = { scheduled: 'Schedule', ring_now: 'Ring now', test_tone: 'Test tone', page: 'This page',
   touch_point: 'Other program' };
+// Schedule changes, shown in grey. skip_set uses the entry's detail (the skipped date).
+const CHANGES = { enabled: 'Bell turned on', disabled: 'Bell turned off', skip_cleared: 'Skip removed',
+  held: 'Bells held for today', resumed: 'Bells resumed', bells_on: 'All bells switched on',
+  bells_off: 'All bells switched off' };
+
+function logResult(entry) {
+  if (entry.result === 'failed') return `Failed: ${entry.error}`;
+  if (entry.result === 'skipped') return 'Skipped';
+  if (entry.result === 'skip_set') return entry.detail ? `Skip set for ${fmtDate(entry.detail)}` : 'Skip set';
+  return CHANGES[entry.result] || 'Played';
+}
 
 async function loadLog() {
   const { entries } = await api('GET', '/api/history');
@@ -805,10 +816,10 @@ async function loadLog() {
       lastDay = day;
       nodes.push(h('div', { class: 'log-day' }, day === today ? 'Today' : day === yesterday ? 'Yesterday' : fmtDate(day)));
     }
-    const what = entry.label ? `${entry.label} · ${entry.sound}` : entry.sound;
-    const result = entry.result === 'failed' ? `Failed: ${entry.error}`
-      : entry.result === 'skipped' ? 'Skipped' : 'Played';
-    nodes.push(h('div', { class: `log-row ${entry.result}` },
+    const what = [entry.label, entry.sound].filter(Boolean).join(' · ') || 'All bells';
+    const result = logResult(entry);
+    const change = entry.result === 'skip_set' || entry.result in CHANGES;
+    nodes.push(h('div', { class: `log-row ${entry.result}${change ? ' change' : ''}` },
       h('div', { class: 't' }, fmtTime(time.slice(0, 8))),
       h('div', { style: 'overflow-wrap:anywhere' }, what),
       h('div', { class: 'src' }, SOURCES[entry.source] || entry.source),

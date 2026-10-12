@@ -80,15 +80,16 @@ class TouchPoints:
         to call a handler, and a bound method's self would be counted.
         """
         def set_enabled(value):
-            self._apply('enabled', lambda: self._store.set_settings({'enabled': to_bool(value)}))
+            self._apply('enabled', lambda: self._change(
+                lambda: self._store.set_settings({'enabled': to_bool(value)})))
 
         def set_master_volume(value):
             self._apply('master_volume',
                         lambda: self._store.set_settings({'master_volume': to_volume(value)}))
 
         def set_held(value):
-            self._apply('held', lambda: self._store.set_held(to_bool(value, 'held'),
-                                                             self._clock().date()))
+            self._apply('held', lambda: self._change(
+                lambda: self._store.set_held(to_bool(value, 'held'), self._clock().date())))
 
         def play_sound(args):
             self._apply('play', lambda: self._play(sound_argument(args)))
@@ -98,6 +99,13 @@ class TouchPoints:
 
         return {'set_enabled': set_enabled, 'set_master_volume': set_master_volume,
                 'set_held': set_held, 'play_sound': play_sound, 'stop_sound': stop_sound}
+
+    def _change(self, action):
+        """Run a settings change and log it if it switched bells on or off, or held them."""
+        before = self._store.get()
+        action()
+        if self._history is not None:
+            self._history.record_setting_changes('touch_point', before, self._store.get(), self._clock())
 
     def _apply(self, what, action):
         # Handlers never raise into MUSE; failures land in last_error.

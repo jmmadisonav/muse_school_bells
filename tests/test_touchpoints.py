@@ -155,3 +155,15 @@ def test_touch_point_plays_are_logged(tmp_path, log):
     handlers['play_sound']('recess.wav')
     assert [(e['source'], e['result']) for e in h.entries()] == [('touch_point', 'failed'),
                                                                 ('touch_point', 'played')]
+
+
+def test_touch_point_setting_changes_are_logged(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    h = history.History(str(tmp_path / 'history.jsonl'), log, clock=lambda: NOW)
+    handlers = touchpoints.TouchPoints(FakeExport(), store, FakePlayer(), str(tmp_path), log,
+                                       clock=lambda: NOW, history=h).handlers()
+    handlers['set_held'](True)
+    handlers['set_enabled'](False)
+    handlers['set_enabled'](False)
+    assert [(e['source'], e['result']) for e in reversed(h.entries())] == [
+        ('touch_point', 'held'), ('touch_point', 'bells_off')]
