@@ -1252,7 +1252,16 @@ window.addEventListener('hashchange', showTab);
 showTab();
 poll().then(() => { if (state && currentTab === 'log') run(loadLog); });
 setInterval(() => { if (!document.hidden) poll(); }, 2000);
-setInterval(() => { if (state) renderTick(); }, 1000);
+// Tick just after each of the controller's seconds begins, rather than every 1000 ms from page
+// load, so the displayed second never lags or skips.
+function scheduleTick() {
+  const intoSecond = clockBase ? controllerNow().getTime() % 1000 : 0;
+  setTimeout(() => {
+    if (state) renderTick();
+    scheduleTick();
+  }, 1000 - intoSecond + 15);
+}
+scheduleTick();
 setInterval(() => { if (currentTab === 'log' && !document.hidden && !connectionLost) loadLog().catch(() => {}); }, 5000);
 </script>
 </body>

@@ -169,7 +169,7 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             now = clock()
             state = store.get()
             return {
-                'time': now.astimezone().isoformat(timespec='seconds'),
+                'time': now.astimezone().isoformat(timespec='milliseconds'),  # the page's clock needs the fraction
                 'weekday': bells.DAYS[now.weekday()],
                 'enabled': state['enabled'],
                 'master_volume': state['master_volume'],

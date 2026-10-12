@@ -308,3 +308,9 @@ def test_ring_now_for_a_specific_bell(app):
     entry = call(app, 'GET', '/api/history')[1]['entries'][0]
     assert (entry['source'], entry['label'], entry['result']) == ('ring_now', 'Recess', 'played')
     assert call(app, 'POST', '/api/play', {'bell': 'nope'})[0] == 404
+
+
+def test_state_time_has_milliseconds(app):
+    import re
+    time = call(app, 'GET', '/api/state')[1]['time']
+    assert re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}[+-]\d\d:\d\d', time), time
