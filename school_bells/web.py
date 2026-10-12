@@ -65,7 +65,13 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                 if method == 'GET' and path == '/api/state':
                     return self._send_json(200, self._state())
                 if method == 'PUT' and path == '/api/bells':
-                    return self._put_bells()
+                    return self._put_bells(query)
+                if method == 'POST' and path == '/api/schedules':
+                    return self._create_schedule()
+                if method == 'PUT' and path.startswith('/api/schedules/'):
+                    return self._update_schedule(unquote(path[len('/api/schedules/'):]))
+                if method == 'DELETE' and path.startswith('/api/schedules/'):
+                    return self._delete_schedule(unquote(path[len('/api/schedules/'):]))
                 if method == 'PUT' and path == '/api/settings':
                     return self._put_settings()
                 if method == 'POST' and path == '/api/sounds':
@@ -168,6 +174,9 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
         def _state(self):
             now = clock()
             state = store.get()
+            active = bells.schedule_for(state, now.date())
+            with_sounds = lambda bell_list: [dict(b, missing_sound=not sounds.sound_exists(sounds_dir, b['sound']))
+                                             for b in bell_list]
             return {
                 'time': now.astimezone().isoformat(timespec='milliseconds'),  # the page's clock needs the fraction
                 'weekday': bells.DAYS[now.weekday()],
@@ -175,8 +184,9 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                 'master_volume': state['master_volume'],
                 'time_format': state['time_format'],
                 'held': bells.is_held(state, now),
-                'bells': [dict(b, missing_sound=not sounds.sound_exists(sounds_dir, b['sound']))
-                          for b in state['bells']],
+                'bells': with_sounds(active['bells']),
+                'schedules': [dict(s, bells=with_sounds(s['bells'])) for s in state['schedules']],
+                'active_schedule': self._active(state, now),
                 'sounds': sounds.list_sounds(sounds_dir),
                 'playing': player.playing,
                 'next_bell': bells.next_bell(state, now),
@@ -185,24 +195,70 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                             'last_playback': getattr(player, 'last_playback', None)},
             }
 
+        def _active(self, state, now):
+            active = bells.schedule_for(state, now.date())
+            return {'id': active['id'], 'name': active['name'], 'manual': bells.is_manual(state, now.date())}
+
+        def _logged_change(self, action):
+            """Run a schedule change and log any change of active schedule it causes."""
+            before = store.get()
+            result = action()
+            if history is not None:
+                history.record_setting_changes('page', before, store.get(), clock())
+            return result
+
+        def _create_schedule(self):
+            body = self._read_json()
+            if not isinstance(body, dict):
+                raise bells.ValidationError('Body must be {"name": "<name>"}')
+            try:
+                schedule = store.create_schedule(body.get('name'), body.get('copy_from'))
+            except KeyError:
+                return self._error(404, 'No schedule with id %s' % body.get('copy_from'))
+            self._send_json(201, schedule)
+
+        def _update_schedule(self, schedule_id):
+            body = self._read_json()
+            try:
+                schedule = self._logged_change(lambda: store.update_schedule(schedule_id, body))
+            except KeyError:
+                return self._error(404, 'No schedule with id %s' % schedule_id)
+            self._send_json(200, schedule)
+
+        def _delete_schedule(self, schedule_id):
+            try:
+                self._logged_change(lambda: store.delete_schedule(schedule_id))
+            except KeyError:
+                return self._error(404, 'No schedule with id %s' % schedule_id)
+            self._send_json(200, {'deleted': schedule_id})
+
         def _put_settings(self):
             body = self._read_json()
             if not isinstance(body, dict):
                 raise bells.ValidationError('Settings must be a JSON object')
             if 'held' in body and not isinstance(body['held'], bool):
                 raise bells.ValidationError('held must be true or false')
+            if 'active_schedule' in body and not (body['active_schedule'] is None
+                                                  or isinstance(body['active_schedule'], str)):
+                raise bells.ValidationError('active_schedule must be a schedule id, or null to follow the dates')
             before = store.get()
-            others = {k: v for k, v in body.items() if k != 'held'}
+            others = {k: v for k, v in body.items() if k not in ('held', 'active_schedule')}
             if others:
                 store.set_settings(others)
             if 'held' in body:
                 store.set_held(body['held'], clock().date())
+            if 'active_schedule' in body:
+                try:
+                    store.set_active(body['active_schedule'], clock().date())
+                except KeyError:
+                    return self._error(404, 'No schedule with id %s' % body['active_schedule'])
             state = store.get()
             if history is not None:
                 history.record_setting_changes('page', before, state, clock())
             self._send_json(200, {'enabled': state['enabled'], 'master_volume': state['master_volume'],
                                   'held': bells.is_held(state, clock()),
-                                  'time_format': state['time_format']})
+                                  'time_format': state['time_format'],
+                                  'active_schedule': self._active(state, clock())})
 
         def _skip(self, bell_id):
             body = self._read_json()
@@ -234,7 +290,7 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             target = bells.ring_target(state, clock())
             if target is None:
                 return self._error(409, 'No bells are scheduled, so there is nothing to ring')
-            bell = next(b for b in state['bells'] if b['id'] == target['id'])
+            _, bell = bells.find_bell(state, target['id'])
             if not sounds.sound_exists(sounds_dir, bell['sound']):
                 return self._error(404, 'Sound %s does not exist' % bell['sound'])
             gain = state['master_volume'] / 100 * bell['volume'] / 100
@@ -247,13 +303,18 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             self._play_logged('test_tone', test_tone_path, store.get()['master_volume'] / 100,
                               os.path.basename(test_tone_path))
 
-        def _put_bells(self):
+        def _put_bells(self, query):
             body = self._read_json()
             if not isinstance(body, dict):
                 raise bells.ValidationError('Body must be {"bells": [...]}')
-            before = store.get()['bells']
-            clean = store.set_bells(body.get('bells'),
-                                    lambda name: sounds.sound_exists(sounds_dir, name))
+            # Without ?schedule=, edit the schedule in use today.
+            schedule_id = query.get('schedule', [None])[0] or bells.schedule_for(store.get(), clock().date())['id']
+            try:
+                before = store.bells(schedule_id)
+                clean = store.set_bells(body.get('bells'),
+                                        lambda name: sounds.sound_exists(sounds_dir, name), schedule_id)
+            except KeyError:
+                return self._error(404, 'No schedule with id %s' % schedule_id)
             if history is not None:
                 history.record_bell_changes('page', before, clean)
             self._send_json(200, {'bells': clean})
@@ -293,7 +354,7 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             if 'bell' in body:
                 # Ring a specific bell now: its sound at its volume, logged as Ring now.
                 state = store.get()
-                bell = next((b for b in state['bells'] if b['id'] == body['bell']), None)
+                _, bell = bells.find_bell(state, body['bell'])
                 if bell is None:
                     return self._error(404, 'No bell with id %s' % body['bell'])
                 if not sounds.sound_exists(sounds_dir, bell['sound']):

@@ -30,12 +30,13 @@ def tp(tmp_path, log):
 def test_handler_arities_match_muse_dispatch(tp):
     arity = {name: len(inspect.getfullargspec(f)[0]) for name, f in tp.h.items()}
     assert arity == {'set_enabled': 1, 'set_master_volume': 1, 'set_held': 1,
-                     'play_sound': 1, 'stop_sound': 0}
+                     'set_active_schedule': 1, 'play_sound': 1, 'stop_sound': 0}
 
 
 def test_publish_sends_everything_once_then_only_changes(tp):
     tp.tp.publish()
-    assert dict(tp.export.updates) == {'enabled': True, 'master_volume': 80, 'held': False, 'playing': '',
+    assert dict(tp.export.updates) == {'enabled': True, 'master_volume': 80, 'held': False,
+                                       'active_schedule': 'Standard', 'playing': '',
                                        'next_bell': 'Mon 11:00 Recess', 'last_error': ''}
     tp.export.updates.clear()
     tp.tp.publish()
@@ -103,7 +104,7 @@ def test_stop(tp):
 
 
 def test_bell_rang_dispatches_event(tp):
-    tp.tp.bell_rang(tp.store.get()['bells'][0])
+    tp.tp.bell_rang(tp.store.bells()[0])
     assert tp.export.dispatches == [('bell_rang', {'id': 'r1', 'label': 'Recess', 'time': '11:00',
                                                    'sound': 'recess.wav'})]
 
@@ -129,7 +130,7 @@ def test_start_publishes_without_touching_online_state(tp):
     # MUSE reports a running program's device as online by itself. Calling online()
     # during startup isn't needed, and didn't bring the device online for Automator.
     tp.tp.start()
-    assert tp.export.calls[:6] == ['update'] * 6
+    assert tp.export.calls[:7] == ['update'] * 7
     assert 'online' not in tp.export.calls and 'offline' not in tp.export.calls
 
 
@@ -170,3 +171,22 @@ def test_touch_point_setting_changes_are_logged(tmp_path, log):
     handlers['set_enabled'](False)
     assert [(e['source'], e['result']) for e in reversed(h.entries())] == [
         ('touch_point', 'held'), ('touch_point', 'bells_off')]
+
+
+def test_set_active_schedule_by_name(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    summer = store.create_schedule('Summer')
+    h = history.History(str(tmp_path / 'history.jsonl'), log, clock=lambda: NOW)
+    export = FakeExport()
+    points = touchpoints.TouchPoints(export, store, FakePlayer(), str(tmp_path), log, clock=lambda: NOW, history=h)
+    handlers = points.handlers()
+    handlers['set_active_schedule']('SUMMER')
+    assert store.get()['override']['schedule'] == summer['id']
+    assert ('active_schedule', 'Summer') in export.updates
+    handlers['set_active_schedule']('auto')
+    assert store.get()['override'] is None
+    handlers['set_active_schedule']('Winter')
+    assert 'No schedule called Winter' in points.values()['last_error']
+    changes = [(e['source'], e['result'], e['label'], e['detail']) for e in reversed(h.entries())]
+    assert changes == [('touch_point', 'schedule_changed', 'Summer', 'manual'),
+                       ('touch_point', 'schedule_changed', 'Standard', 'dates')]

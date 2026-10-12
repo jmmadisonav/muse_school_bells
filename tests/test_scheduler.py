@@ -136,7 +136,7 @@ def test_history_records_played_failed_and_skipped(env, log, tmp_path):
     player.fail = None
     (sounds_dir / 'recess.wav').unlink()
     sched.tick(at(14, 11, 0))
-    [b] = store.get()['bells']
+    [b] = store.bells()
     store.set_bells([dict(b, skip_on='2026-10-15')])
     sched.tick(at(15, 11, 0, 0))
     sched.tick(at(15, 11, 0, 30))
@@ -149,8 +149,22 @@ def test_history_records_played_failed_and_skipped(env, log, tmp_path):
 
 def test_disabled_bell_neither_rings_nor_logs(env, log, tmp_path):
     _, store, player, sounds_dir = env
-    [b] = store.get()['bells']
+    [b] = store.bells()
     store.set_bells([dict(b, enabled=False)])
     h = history.History(str(tmp_path / 'history.jsonl'), log, clock=lambda: at(12, 11, 0))
     scheduler.Scheduler(store, player, str(sounds_dir), log, history=h).tick(at(12, 11, 0))
     assert player.plays == [] and h.entries() == []
+
+
+def test_automatic_schedule_changeover_is_logged_once(env, log, tmp_path):
+    _, store, player, sounds_dir = env
+    summer = store.create_schedule('Summer')
+    store.update_schedule(summer['id'], {'range': {'from': '10-01', 'to': '04-30'}})
+    h = history.History(str(tmp_path / 'history.jsonl'), log, clock=lambda: at(12, 11, 0))
+    sched = scheduler.Scheduler(store, player, str(sounds_dir), log, history=h)
+    sched.tick(datetime(2026, 4, 30, 23, 59))
+    sched.tick(datetime(2026, 5, 1, 0, 0, 5))
+    sched.tick(datetime(2026, 5, 1, 0, 0, 30))
+    [entry] = h.entries()
+    assert (entry['source'], entry['result'], entry['label'], entry['detail']) == (
+        'scheduled', 'schedule_changed', 'Standard', 'dates')

@@ -20,6 +20,10 @@
     ".kind": "param", ".type": "boolean",
     ".metadata": {"setter": "set_held", "desc": "Holds scheduled bells for the rest of today"}
   },
+  "active_schedule": {
+    ".kind": "param", ".type": "string",
+    ".metadata": {"setter": "set_active_schedule", "desc": "Schedule in use; set a name to pick one, or auto to follow the dates"}
+  },
   "playing": {".kind": "param", ".type": "string", ".access": "ro",
               ".metadata": {"desc": "Sound playing now, or empty"}},
   "next_bell": {".kind": "param", ".type": "string", ".access": "ro",

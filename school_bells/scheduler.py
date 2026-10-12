@@ -17,11 +17,21 @@ class Scheduler:
         self._events = events  # has bell_rang(bell) and error(message), or None
         self._history = history  # history.History, or None
         self._rung = set()  # (bell id, ISO date) pairs; memory only
+        self._seen = None  # (ISO date, automatic schedule id) at the last tick
 
     def _record(self, bell, result, error=''):
         if self._history is not None:
             self._history.record('scheduled', bell['sound'], result, label=bell['label'] or bell['time'],
                                  error=error)
+
+    def _note_changeover(self, state, now):
+        # A new day whose automatic schedule differs from yesterday's means a date range
+        # started or ended. Manual picks are logged where they're made.
+        auto = bells.auto_schedule(state, now.date())
+        seen = (now.date().isoformat(), auto['id'])
+        if self._seen and self._seen[0] != seen[0] and self._seen[1] != seen[1] and self._history:
+            self._history.record('scheduled', '', 'schedule_changed', label=auto['name'], detail='dates')
+        self._seen = seen
 
     def _error(self, message):
         if self._events is not None:
@@ -42,6 +52,7 @@ class Scheduler:
         yesterday = (now.date() - timedelta(days=1)).isoformat()
         self._rung = {key for key in self._rung if key[1] >= yesterday}
         handled = []
+        self._note_changeover(state, now)
         for b in bells.skipped_bells(state, now, self._rung):
             self._rung.add((b['id'], today))
             self._record(b, 'skipped')

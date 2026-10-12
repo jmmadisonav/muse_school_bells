@@ -87,7 +87,7 @@ def test_put_bells_validates_and_saves(app):
     upload(app, 'recess.wav', make_wav(0.1))
     status, body = call(app, 'PUT', '/api/bells', {'bells': [RECESS]})
     assert status == 200 and body['bells'][0]['label'] == 'Recess'
-    assert app.store.get()['bells'][0]['time'] == '11:00'
+    assert app.store.bells()[0]['time'] == '11:00'
     assert call(app, 'PUT', '/api/bells', {'bells': [dict(RECESS, time='25:00')]})[0] == 400
     status, body = call(app, 'PUT', '/api/bells', {'bells': [dict(RECESS, sound='nope.wav')]})
     assert status == 400 and 'nope.wav' in body['error']
@@ -97,7 +97,8 @@ def test_put_bells_validates_and_saves(app):
 
 def test_put_settings_partial(app):
     assert call(app, 'PUT', '/api/settings', {'master_volume': 30}) == (
-        200, {'enabled': True, 'master_volume': 30, 'held': False, 'time_format': '24h'})
+        200, {'enabled': True, 'master_volume': 30, 'held': False, 'time_format': '24h',
+              'active_schedule': {'id': 'standard', 'name': 'Standard', 'manual': False}})
     assert call(app, 'PUT', '/api/settings', {'master_volume': 300})[0] == 400
 
 
@@ -182,7 +183,8 @@ def test_state_reports_hold_ring_target_and_adapter(app):
     assert state['ring_target']['label'] == 'Recess'
     assert state['adapter'] == {'connected': True, 'last_playback': None}
     assert call(app, 'PUT', '/api/settings', {'held': True}) == (
-        200, {'enabled': True, 'master_volume': 80, 'held': True, 'time_format': '24h'})
+        200, {'enabled': True, 'master_volume': 80, 'held': True, 'time_format': '24h',
+              'active_schedule': {'id': 'standard', 'name': 'Standard', 'manual': False}})
     state = call(app, 'GET', '/api/state')[1]
     assert state['held'] is True
     assert state['next_bell']['date'] == '2026-10-13'
@@ -285,7 +287,7 @@ def test_skip_endpoint(app):
 def test_schedule_changes_are_logged(app):
     upload(app, 'recess.wav', make_wav(0.1))
     call(app, 'PUT', '/api/bells', {'bells': [dict(RECESS, id='r1')]})
-    [b] = app.store.get()['bells']
+    [b] = app.store.bells()
     call(app, 'PUT', '/api/bells', {'bells': [dict(b, enabled=False)]})
     call(app, 'PUT', '/api/bells', {'bells': [dict(b, enabled=True)]})
     call(app, 'POST', '/api/bells/r1/skip', {'skip': True})
@@ -314,3 +316,54 @@ def test_state_time_has_milliseconds(app):
     import re
     time = call(app, 'GET', '/api/state')[1]['time']
     assert re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}[+-]\d\d:\d\d', time), time
+
+
+def test_state_lists_schedules_and_the_active_one(app):
+    upload(app, 'recess.wav', make_wav(0.1))
+    call(app, 'PUT', '/api/bells', {'bells': [RECESS]})
+    state = call(app, 'GET', '/api/state')[1]
+    [schedule] = state['schedules']
+    assert (schedule['id'], schedule['name'], schedule['default'], schedule['range']) == ('standard', 'Standard', True, None)
+    assert schedule['bells'][0]['missing_sound'] is False
+    assert state['active_schedule'] == {'id': 'standard', 'name': 'Standard', 'manual': False}
+    assert [b['label'] for b in state['bells']] == ['Recess']
+
+
+def test_schedule_endpoints(app):
+    upload(app, 'recess.wav', make_wav(0.1))
+    call(app, 'PUT', '/api/bells', {'bells': [RECESS]})
+    status, winter = call(app, 'POST', '/api/schedules', {'name': 'Winter', 'copy_from': 'standard'})
+    assert status == 201 and winter['name'] == 'Winter' and len(winter['bells']) == 1
+    assert call(app, 'POST', '/api/schedules', {'name': 'winter'})[0] == 400
+    assert call(app, 'POST', '/api/schedules', {'name': 'X', 'copy_from': 'nope'})[0] == 404
+    status, body = call(app, 'PUT', '/api/schedules/%s' % winter['id'], {'range': {'from': '05-01', 'to': '09-30'}})
+    assert status == 200 and body['range'] == {'from': '05-01', 'to': '09-30'}
+    assert call(app, 'PUT', '/api/schedules/standard', {'range': {'from': '01-01', 'to': '01-31'}})[0] == 400
+    assert call(app, 'PUT', '/api/schedules/nope', {'name': 'Y'})[0] == 404
+    status, bells_body = call(app, 'PUT', '/api/bells?schedule=%s' % winter['id'],
+                              {'bells': [dict(RECESS, label='Winter recess', time='10:30')]})
+    assert status == 200 and bells_body['bells'][0]['label'] == 'Winter recess'
+    assert call(app, 'PUT', '/api/bells?schedule=nope', {'bells': []})[0] == 404
+    assert call(app, 'DELETE', '/api/schedules/standard')[0] == 400
+    assert call(app, 'DELETE', '/api/schedules/%s' % winter['id'])[0] == 200
+    assert call(app, 'DELETE', '/api/schedules/%s' % winter['id'])[0] == 404
+
+
+def test_manual_pick_through_settings_is_shown_and_logged(app):
+    status, summer = call(app, 'POST', '/api/schedules', {'name': 'Summer'})
+    body = call(app, 'PUT', '/api/settings', {'active_schedule': summer['id']})[1]
+    assert body['active_schedule'] == {'id': summer['id'], 'name': 'Summer', 'manual': True}
+    assert call(app, 'GET', '/api/state')[1]['active_schedule']['manual'] is True
+    assert call(app, 'PUT', '/api/settings', {'active_schedule': None})[1]['active_schedule']['id'] == 'standard'
+    assert call(app, 'PUT', '/api/settings', {'active_schedule': 'nope'})[0] == 404
+    assert call(app, 'PUT', '/api/settings', {'active_schedule': 5})[0] == 400
+    changes = [(e['result'], e['label'], e['detail']) for e in reversed(call(app, 'GET', '/api/history')[1]['entries'])]
+    assert changes == [('schedule_changed', 'Summer', 'manual'), ('schedule_changed', 'Standard', 'dates')]
+
+
+def test_ring_and_skip_find_bells_in_any_schedule(app):
+    upload(app, 'recess.wav', make_wav(0.1))
+    summer = call(app, 'POST', '/api/schedules', {'name': 'Summer'})[1]
+    [b] = call(app, 'PUT', '/api/bells?schedule=%s' % summer['id'], {'bells': [RECESS]})[1]['bells']
+    assert call(app, 'POST', '/api/play', {'bell': b['id']})[0] == 200
+    assert call(app, 'POST', '/api/bells/%s/skip' % b['id'], {'skip': True})[0] == 200

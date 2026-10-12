@@ -91,6 +91,9 @@ class TouchPoints:
             self._apply('held', lambda: self._change(
                 lambda: self._store.set_held(to_bool(value, 'held'), self._clock().date())))
 
+        def set_active_schedule(value):
+            self._apply('active_schedule', lambda: self._change(lambda: self._pick_schedule(value)))
+
         def play_sound(args):
             self._apply('play', lambda: self._play(sound_argument(args)))
 
@@ -98,7 +101,19 @@ class TouchPoints:
             self._apply('stop', self._player.stop)
 
         return {'set_enabled': set_enabled, 'set_master_volume': set_master_volume,
-                'set_held': set_held, 'play_sound': play_sound, 'stop_sound': stop_sound}
+                'set_held': set_held, 'set_active_schedule': set_active_schedule,
+                'play_sound': play_sound, 'stop_sound': stop_sound}
+
+    def _pick_schedule(self, value):
+        """Pick a schedule by name (any case), or follow the dates for 'auto'."""
+        name = str(value).strip()
+        if name.lower() == 'auto':
+            self._store.set_active(None, self._clock().date())
+            return
+        match = next((s for s in self._store.get()['schedules'] if s['name'].lower() == name.lower()), None)
+        if match is None:
+            raise bells.ValidationError('No schedule called %s' % name)
+        self._store.set_active(match['id'], self._clock().date())
 
     def _change(self, action):
         """Run a settings change and log it if it switched bells on or off, or held them."""
@@ -144,6 +159,7 @@ class TouchPoints:
             'enabled': state['enabled'],
             'master_volume': state['master_volume'],
             'held': bells.is_held(state, self._clock()),
+            'active_schedule': bells.schedule_for(state, self._clock().date())['name'],
             'playing': self._player.playing or '',
             'next_bell': describe_next(bells.next_bell(state, self._clock())),
             'last_error': self._last_error,

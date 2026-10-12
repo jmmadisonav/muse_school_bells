@@ -17,7 +17,9 @@ def bell(**changes):
 
 
 def state_with(*bell_list, enabled=True):
-    return dict(bells.default_state(), enabled=enabled, bells=bells.validate_bells(list(bell_list)))
+    state = dict(bells.default_state(), enabled=enabled)
+    state['schedules'] = [dict(state['schedules'][0], bells=bells.validate_bells(list(bell_list)))]
+    return state
 
 
 def test_validate_assigns_ids_sorts_and_orders_days():
@@ -130,7 +132,7 @@ def test_store_rejects_invalid_bells_without_changing_state(tmp_path, log):
     store.set_bells([bell(id='r1')])
     with pytest.raises(ValidationError):
         store.set_bells([bell(time='99:99')])
-    assert [b['id'] for b in store.get()['bells']] == ['r1']
+    assert [b['id'] for b in store.bells()] == ['r1']
 
 
 def test_store_bells_using(tmp_path, log):
@@ -229,7 +231,7 @@ def test_store_set_skip(tmp_path, log):
     store = bells.Store(str(tmp_path / 'bells.json'), log)
     store.set_bells([bell(id='r1')])
     assert store.set_skip('r1', True, datetime(2026, 10, 12, 11, 30))['skip_on'] == '2026-10-13'
-    assert bells.Store(str(tmp_path / 'bells.json'), log).get()['bells'][0]['skip_on'] == '2026-10-13'
+    assert bells.Store(str(tmp_path / 'bells.json'), log).bells()[0]['skip_on'] == '2026-10-13'
     assert store.set_skip('r1', False, datetime(2026, 10, 12, 11, 30))['skip_on'] is None
     with pytest.raises(KeyError):
         store.set_skip('nope', True, MON_1100)
@@ -240,3 +242,157 @@ def test_skip_next_on_a_held_day_skips_the_next_real_ring(tmp_path, log):
     store.set_bells([bell(id='r1')])
     store.set_held(True, date(2026, 10, 12))
     assert store.set_skip('r1', True, datetime(2026, 10, 12, 9, 0))['skip_on'] == '2026-10-13'
+
+
+# ---- Multiple schedules ----
+
+SUMMER = {'from': '10-01', 'to': '04-30'}
+
+
+def two_schedules(override=None):
+    """Standard (default, 09:00) plus Summer (1 Oct to 30 Apr, 08:30), Monday to Friday."""
+    state = bells.default_state()
+    standard = dict(state['schedules'][0], bells=bells.validate_bells([bell(id='std', label='Start', time='09:00')]))
+    summer = {'id': 'sum', 'name': 'Summer', 'default': False, 'range': dict(SUMMER),
+              'bells': bells.validate_bells([bell(id='sm', label='Start', time='08:30')])}
+    return dict(state, schedules=[standard, summer], override=override)
+
+
+def test_default_state_has_one_default_schedule():
+    [schedule] = bells.default_state()['schedules']
+    assert (schedule['id'], schedule['name'], schedule['default'], schedule['range'], schedule['bells']) == \
+        ('standard', 'Standard', True, None, [])
+    assert bells.default_state()['override'] is None
+
+
+def test_old_file_migrates_to_a_standard_schedule(tmp_path, log):
+    path = tmp_path / 'bells.json'
+    path.write_text(json.dumps({'enabled': True, 'master_volume': 70, 'bells': [bell(id='r1')]}))
+    state = bells.load_state(str(path), log)
+    [schedule] = state['schedules']
+    assert (schedule['id'], schedule['name'], schedule['default']) == ('standard', 'Standard', True)
+    assert [b['id'] for b in schedule['bells']] == ['r1']
+    assert 'bells' not in state and state['master_volume'] == 70 and not log.errors
+
+
+@pytest.mark.parametrize('day,inside', [('2026-10-01', True), ('2026-12-31', True), ('2026-01-01', True),
+                                        ('2026-04-30', True), ('2026-05-01', False), ('2026-09-30', False)])
+def test_in_range_wraps_past_new_year(day, inside):
+    assert bells.in_range(SUMMER, date.fromisoformat(day)) is inside
+
+
+def test_in_range_without_wrap_and_on_29_february():
+    assert bells.in_range({'from': '02-01', 'to': '02-29'}, date(2028, 2, 29))
+    assert not bells.in_range({'from': '03-01', 'to': '06-30'}, date(2026, 2, 28))
+
+
+@pytest.mark.parametrize('value', [{'from': '13-01', 'to': '01-31'}, {'from': '02-30', 'to': '03-01'},
+                                   {'from': '1-5', 'to': '02-01'}, {'from': '01-05'}, 'summer'])
+def test_check_range_rejects_bad_ranges(value):
+    with pytest.raises(ValidationError):
+        bells.check_range(value)
+
+
+def test_schedule_for_uses_ranges_then_default():
+    state = two_schedules()
+    assert bells.schedule_for(state, date(2026, 11, 2))['name'] == 'Summer'
+    assert bells.schedule_for(state, date(2026, 6, 1))['name'] == 'Standard'
+
+
+def test_due_and_next_bell_use_each_dates_schedule():
+    state = two_schedules()
+    assert [b['id'] for b in bells.due_bells(state, datetime(2026, 10, 12, 8, 30), set())] == ['sm']
+    assert bells.due_bells(state, datetime(2026, 10, 12, 9, 0), set()) == []
+    # Thursday 30 April is the last Summer day; the next bell is Friday 1 May from Standard.
+    assert bells.next_bell(state, datetime(2026, 4, 30, 10, 0)) == {
+        'id': 'std', 'label': 'Start', 'time': '09:00', 'date': '2026-05-01'}
+
+
+def test_manual_pick_lasts_until_the_automatic_schedule_changes():
+    state = two_schedules(override={'schedule': 'standard', 'from': '2026-04-20', 'until': '2026-05-01'})
+    assert bells.schedule_for(state, date(2026, 4, 19))['name'] == 'Summer'
+    assert bells.schedule_for(state, date(2026, 4, 20))['name'] == 'Standard'
+    assert bells.schedule_for(state, date(2026, 4, 30))['name'] == 'Standard'
+    assert bells.schedule_for(state, date(2026, 10, 5))['name'] == 'Summer'
+
+
+def test_store_set_active_computes_until_and_clears_on_automatic_pick(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    summer = store.create_schedule('Summer')
+    store.update_schedule(summer['id'], {'range': SUMMER})
+    store.set_active(store.get()['schedules'][0]['id'], date(2026, 4, 20))
+    assert store.get()['override'] == {'schedule': 'standard', 'from': '2026-04-20', 'until': '2026-05-01'}
+    store.set_active(summer['id'], date(2026, 4, 21))  # Summer is the automatic schedule that day
+    assert store.get()['override'] is None
+    store.set_active(summer['id'], date(2026, 6, 1))
+    assert store.get()['override']['until'] == '2026-10-01'
+    store.set_active(None, date(2026, 6, 1))
+    assert store.get()['override'] is None
+    with pytest.raises(KeyError):
+        store.set_active('nope', date(2026, 6, 1))
+
+
+def test_store_create_duplicate_rename_and_delete(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    store.set_bells([bell(id='r1', skip_on='2026-10-13')])
+    copy = store.create_schedule('Winter', copy_from='standard')
+    assert copy['default'] is False and copy['range'] is None
+    [copied] = copy['bells']
+    assert copied['id'] != 'r1' and copied['label'] == 'Recess' and copied['skip_on'] is None
+    with pytest.raises(ValidationError, match='already a schedule'):
+        store.create_schedule('winter')
+    with pytest.raises(ValidationError):
+        store.create_schedule('  ')
+    assert store.update_schedule(copy['id'], {'name': 'Cold'})['name'] == 'Cold'
+    with pytest.raises(ValidationError, match='default'):
+        store.delete_schedule('standard')
+    store.delete_schedule(copy['id'])
+    assert [s['id'] for s in store.get()['schedules']] == ['standard']
+    with pytest.raises(KeyError):
+        store.delete_schedule(copy['id'])
+    assert bells.Store(str(tmp_path / 'bells.json'), log).get()['schedules'] == store.get()['schedules']
+
+
+def test_store_ranges_overlap_and_default_rules(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    summer = store.create_schedule('Summer')
+    winter = store.create_schedule('Winter')
+    store.update_schedule(summer['id'], {'range': SUMMER})
+    with pytest.raises(ValidationError, match='overlap'):
+        store.update_schedule(winter['id'], {'range': {'from': '04-01', 'to': '09-30'}})
+    store.update_schedule(winter['id'], {'range': {'from': '05-01', 'to': '09-30'}})
+    with pytest.raises(ValidationError, match='default'):
+        store.update_schedule('standard', {'range': {'from': '01-01', 'to': '01-31'}})
+    made = store.update_schedule(summer['id'], {'default': True})
+    assert made['default'] is True and made['range'] is None
+    assert [s['default'] for s in store.get()['schedules']] == [False, True, False]
+
+
+def test_changing_ranges_clears_a_manual_pick(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    summer = store.create_schedule('Summer')
+    store.set_active(summer['id'], date(2026, 6, 1))
+    store.update_schedule(summer['id'], {'range': SUMMER})
+    assert store.get()['override'] is None
+
+
+def test_bells_per_schedule_with_ids_unique_across_schedules(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    summer = store.create_schedule('Summer')
+    store.set_bells([bell(id='r1')])
+    clean = store.set_bells([bell(id='r1', label='Summer recess')], schedule_id=summer['id'])
+    assert clean[0]['id'] != 'r1'  # ids stay unique across schedules
+    # The clash rule applies only within a schedule.
+    assert store.bells() and store.bells(summer['id'])[0]['time'] == '11:00'
+    with pytest.raises(KeyError):
+        store.set_bells([], schedule_id='nope')
+    assert store.bells_using('recess.wav') == ['Recess (Standard)', 'Summer recess (Summer)']
+
+
+def test_skip_next_finds_the_next_date_its_schedule_is_active(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    summer = store.create_schedule('Summer')
+    store.update_schedule(summer['id'], {'range': SUMMER})
+    [b] = store.set_bells([bell(label='Summer recess')], schedule_id=summer['id'])
+    # After 11:00 on Thursday 30 April, Summer isn't active again until Thursday 1 October.
+    assert store.set_skip(b['id'], True, datetime(2026, 4, 30, 12, 0))['skip_on'] == '2026-10-01'

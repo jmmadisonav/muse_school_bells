@@ -45,12 +45,17 @@ class History:
                 self._log.error('Could not write the bell log: %r' % e)
 
     def record_setting_changes(self, source, before, after, now):
-        """Log a change to the master switch or the hold between two schedule states."""
+        """Log changes to the master switch, the hold, or the active schedule between two states."""
         if before['enabled'] != after['enabled']:
             self.record(source, '', 'bells_on' if after['enabled'] else 'bells_off')
         held_before, held_after = bells.is_held(before, now), bells.is_held(after, now)
         if held_before != held_after:
             self.record(source, '', 'held' if held_after else 'resumed')
+        day = now.date()
+        was, now_active = bells.schedule_for(before, day), bells.schedule_for(after, day)
+        if was['id'] != now_active['id']:
+            self.record(source, '', 'schedule_changed', label=now_active['name'],
+                        detail='manual' if bells.is_manual(after, day) else 'dates')
 
     def record_bell_changes(self, source, before, after):
         """Log each existing bell turned on or off. Added and deleted bells aren't logged."""
