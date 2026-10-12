@@ -4,7 +4,7 @@
 
 **Goal:** Serve a web page from the AMX Muse `school_bells` program that schedules bells by time and weekday, uploads sounds, and plays them through the USB audio adapter.
 
-**Architecture:** Five small Python modules: `bells` (schedule logic and storage), `sounds` (WAV rules), `audio` (libusb player), `scheduler` (ring thread), and `web` (standard-library HTTP server and JSON API). `main.py` wires them together. One self-contained `static/index.html` page converts uploads to WAV in the browser and calls the API.
+**Architecture:** The deployable MUSE program lives in `school_bells/`, apart from tests, docs, and tools. It has six small Python modules: `bells` (schedule logic and storage), `sounds` (WAV rules), `audio` (libusb player), `scheduler` (ring thread), `web` (standard-library HTTP server and JSON API), and `touchpoints` (params, commands, and events for other MUSE programs). `main.py` wires them together. One self-contained `school_bells/static/index.html` page converts uploads to WAV in the browser and calls the API.
 
 **Tech Stack:** Python 3.10 standard library (`http.server`, `wave`, `audioop`, `json`, `threading`), pip `libusb1` on the controller, `pytest` on the PC, and vanilla HTML, CSS, and JavaScript with the Web Audio API.
 
@@ -12,18 +12,20 @@
 
 ## Global Constraints
 
-- The controller runs Python 3.10.13 on aarch64. On the PC, use Python 3.10 (`py -3.10`).
-- The only controller dependency is `libusb1>=3.0,<4` in `requirements.txt`. Everything else uses the standard library. `pytest` goes in `requirements-dev.txt` only, and never in `requirements.txt`.
-- Only `main.py` and `env_probe.py` import `mojo`. Every other module receives a `log` object and calls only `log.info(str)` and `log.error(str)`.
+- The controller runs Python 3.10.13 on aarch64. On the PC, use the repository venv (`.venv\Scripts\python`, Python 3.14) with `audioop-lts`. Write code that runs on Python 3.10: no `match` statements, and no standard-library features added after 3.10.
+- Program modules live in `school_bells/`. `pyproject.toml` puts `school_bells/` and `tests/` on the pytest path, so tests import modules by bare name (`import bells`).
+- Each program folder, `school_bells/` and each folder under `tools/` except `dev_server.py`, holds a `program.json` in the `.metadata` form: `$schema`, a `.metadata` object (`id` and `name` equal to the folder name, `provider`, `script`, `disabled`, and `description`), and touch points as top-level keys.
+- The only controller dependency is `libusb1>=3.0,<4` in `school_bells/requirements.txt`. Everything else uses the standard library. `pytest` goes in `requirements-dev.txt` only, and never in `requirements.txt`.
+- Only the `main.py` of each program folder imports `mojo`. Every other module receives a `log` object and calls only `log.info(str)` and `log.error(str)`.
 - Sounds are 48 kHz, 16-bit, 2-channel PCM WAV files, up to 50 MB each.
 - Sound names match `^[A-Za-z0-9_\-][A-Za-z0-9 _.\-]{0,79}\.wav$`.
 - Bell times are 24-hour `HH:MM`. Days are `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, and `sun`. Volumes are integers from 0 to 100.
 - Gain is `master_volume / 100 × bell volume / 100`. A manual play from the sounds list uses the master volume only.
-- `static/index.html` is one file with no external scripts, fonts, or stylesheets. It works at phone width. Its footer reads exactly: `This page has no login. Keep it on a restricted network.`
+- `school_bells/static/index.html` is one file with no external scripts, fonts, or stylesheets. It works at phone width. Its footer reads exactly: `This page has no login. Keep it on a restricted network.`
 - Follow the Google developer documentation style guide for comments and docs: second person, active voice, present tense.
 - Commit messages never carry a `Co-Authored-By` trailer, a `Claude-Session:` line, or any other Claude or Anthropic attribution.
-- The project folder isn't a git repository yet. Do the Commit steps only if Task 0 initialized git. Otherwise, skip them.
-- Run every command from the project root, `C:\Users\Jim\Developer\Muse Programs\school_bells`, in PowerShell.
+- Work happens on the `bells-web` branch.
+- Run every command from the repository root, `C:\Users\Jim\Developer\Muse Programs\school_bells`, in PowerShell.
 
 ## Review Focus
 
@@ -35,158 +37,52 @@
 
 ---
 
-### Task 0: PC development setup
+### Task 0: PC development setup (done)
 
-**Files:**
-- Create: `requirements-dev.txt`
-- Create: `.gitignore`
-- Create: `tests/conftest.py`
-- Create: `tests/helpers.py`
+Completed on 2026-10-12, before the restructure:
+- `.venv` (Python 3.14, created by the user) with `pytest` and `audioop-lts`, listed in `requirements-dev.txt`.
+- `.gitignore`, git initialized with a baseline commit on `main`, and work on the `bells-web` branch.
+- `pyproject.toml` sets `pythonpath = ["school_bells", "tests"]` and `testpaths = ["tests"]`.
+- `tests/helpers.py` holds `ListLog`, `FakePlayer`, and `make_wav`, and `tests/conftest.py` provides the `log` fixture.
+- The program files moved into `school_bells/`, and the USB probe moved into `tools/usb_probe/` with its own `program.json`.
 
 **Interfaces:**
 - Produces: the `log` pytest fixture, a `ListLog` with `.infos` and `.errors` lists. `helpers.FakePlayer(fail=None)` has `.plays` (a list of `(path, gain)` pairs), `.stops` (int), `.playing` (str or None), `.fail` (an exception to raise on `play`, or None), `play(path, gain)`, and `stop()`. `helpers.make_wav(seconds=1.0, rate=48000, channels=2, width=2, tone_hz=440) -> bytes`.
-
-- [ ] **Step 1: Install Python 3.10 and pytest**
-
-Run:
-```powershell
-winget install --id Python.Python.3.10 -e
-py -3.10 -m pip install --user pytest
-py -3.10 -m pytest --version
-```
-Expected: `pytest 8.x` or later prints.
-
-- [ ] **Step 2: Initialize git, only if the user agreed at plan review**
-
-Run:
-```powershell
-git init
-```
-
-- [ ] **Step 3: Write the dev files**
-
-`requirements-dev.txt`:
-```
-pytest>=8
-```
-
-`.gitignore`:
-```
-data/
-__pycache__/
-.pytest_cache/
-*.wav.tmp
-bells_probe_marker.txt
-```
-
-`tests/conftest.py`:
-```python
-import os
-import sys
-
-import pytest
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from helpers import ListLog  # noqa: E402
-
-
-@pytest.fixture
-def log():
-    return ListLog()
-```
-
-`tests/helpers.py`:
-```python
-"""Test doubles and fixtures shared by the test modules."""
-import io
-import math
-import os
-import struct
-import wave
-
-
-class ListLog:
-    """Stands in for context.log and records messages."""
-
-    def __init__(self):
-        self.infos = []
-        self.errors = []
-
-    def info(self, message):
-        self.infos.append(message)
-
-    def error(self, message):
-        self.errors.append(message)
-
-
-class FakePlayer:
-    """Stands in for audio.Player and records what it was asked to play."""
-
-    def __init__(self, fail=None):
-        self.plays = []
-        self.stops = 0
-        self.playing = None
-        self.fail = fail
-
-    def play(self, path, gain):
-        if self.fail is not None:
-            raise self.fail
-        self.plays.append((path, gain))
-        self.playing = os.path.basename(path)
-
-    def stop(self):
-        self.stops += 1
-        self.playing = None
-
-
-def make_wav(seconds=1.0, rate=48000, channels=2, width=2, tone_hz=440):
-    """Return WAV bytes. 16-bit files hold a sine tone; other widths hold silence."""
-    frames = int(seconds * rate)
-    buffer = io.BytesIO()
-    with wave.open(buffer, 'wb') as w:
-        w.setnchannels(channels)
-        w.setsampwidth(width)
-        w.setframerate(rate)
-        if width == 2:
-            samples = (int(8000 * math.sin(2 * math.pi * tone_hz * n / rate)) for n in range(frames))
-            w.writeframes(b''.join(struct.pack('<h', s) * channels for s in samples))
-        else:
-            w.writeframes(bytes([128]) * frames * channels * width)
-    return buffer.getvalue()
-```
-
-- [ ] **Step 4: Confirm pytest runs**
-
-Run: `py -3.10 -m pytest tests -v`
-Expected: `no tests ran` with exit code 5. That's correct, because no test files exist yet.
-
-- [ ] **Step 5: Commit**
-
-```powershell
-git add .gitignore requirements-dev.txt tests/conftest.py tests/helpers.py main.py usb_probe.py requirements.txt program.json docs
-git commit -m "Add PC test setup and the USB audio probe and design docs"
-```
 
 ---
 
 ### Task 1: Controller environment probe (Phase 0)
 
-A throwaway probe that answers the spec's Phase 0 questions. Its result sets the data folder and the port used in Task 7.
+A probe program, kept in `tools/env_probe/`, that answers the spec's Phase 0 questions. Its result sets `DATA_DIR` in Task 8.
 
 **Files:**
-- Create: `env_probe.py` (deleted at the end of this task)
-- Modify temporarily: `program.json`
+- Create: `tools/env_probe/program.json`
+- Create: `tools/env_probe/main.py`
 - Modify: `docs/superpowers/specs/2026-10-12-school-bells-web-design.md` (add the results)
 
 **Interfaces:**
-- Produces: a "Phase 0 results" section in the spec that records the data folder, the port, and whether `envvars` reach `os.environ`. Task 7 reads it.
+- Produces: a "Phase 0 results" section in the spec that records the data folder, the port, and whether `__file__` is defined. Task 8 reads it.
 
-- [ ] **Step 1: Write the probe**
+- [ ] **Step 1: Write the probe program**
 
-`env_probe.py`:
+`tools/env_probe/program.json`:
+```json
+{
+  "$schema": "https://developer.amx.com/schema/amx-mojo-program-1.0.json",
+  ".metadata": {
+    "id": "env_probe",
+    "name": "env_probe",
+    "provider": "python",
+    "script": "main.py",
+    "disabled": false,
+    "description": "Diagnostic: checks the web port, persistent folders, and clock for school_bells"
+  }
+}
+```
+
+`tools/env_probe/main.py`:
 ```python
-"""Throwaway probe for the spec's Phase 0 questions. Delete it after recording the results."""
+"""Checks what the school_bells program needs from the controller: see Phase 0 in the spec."""
 import glob
 import os
 import shutil
@@ -219,7 +115,6 @@ def probe_paths():
     log.info('__file__: %r' % globals().get('__file__'))
     log.info('cwd: %s' % os.getcwd())
     log.info('sys.path[:4]: %s' % sys.path[:4])
-    log.info('BELLS_PROBE from envvars: %r' % os.environ.get('BELLS_PROBE'))
     for d in candidate_dirs():
         marker = os.path.join(d, MARKER)
         earlier = None
@@ -280,62 +175,49 @@ for probe in (probe_paths, probe_clock, probe_port):
 context.run(globals())
 ```
 
-- [ ] **Step 2: Point the program at the probe**
+- [ ] **Step 2: Check the JSON and commit**
 
-Replace `program.json` with the following. It changes `script` and `envvars` only.
-```json
-{
-  "id": "school_bells",
-  "name": "school_bells",
-  "description": "description",
-  "disabled": false,
-  "provider": "python",
-  "scope": "",
-  "script": "env_probe.py",
-  "envvars": {"BELLS_PROBE": "yes"}
-}
+Run: `.venv\Scripts\python -c "import json; json.load(open('tools/env_probe/program.json'))"`
+Expected: no output.
+
+```powershell
+git add tools/env_probe
+git commit -m "Add the controller environment probe program"
 ```
 
 - [ ] **Step 3: Run it on the controller (the user does this step)**
 
 Ask the user to:
-1. Load the program and attach to its output.
+1. Load the `tools/env_probe` folder as a program and attach to its output.
 2. From the PC, run `curl.exe http://<controller-ip>:8080/` and confirm it prints `school_bells probe OK`.
-3. Reload the program from VS Code, which replaces the program files, and paste the output.
+3. Load the `tools/env_probe` folder again, which replaces the program's files, and paste the output.
 4. Reboot the controller and paste the output again.
+5. Stop or remove the `env_probe` program so it frees port 8080.
 
-Expected: the runs after the reload and after the reboot show `marker from an earlier run: <timestamp>` for each folder that keeps files.
+Expected: the second and third runs show `marker from an earlier run: <timestamp>` for each folder that keeps files.
 
 - [ ] **Step 4: Decide and record the results**
 
 Apply these rules:
-- **Data folder:** the first writable folder, in the probe's listed order, whose marker survived both the reload and the reboot. If that's the program folder, Task 7 uses the default (`<program folder>/data`). Otherwise, Task 7 sets `BELLS_DATA_DIR` to that folder plus `/school_bells`.
+- **Data folder:** the first writable folder, in the probe's listed order, whose marker survived both the reload and the reboot. If that's the program folder, Task 8 uses `os.path.join(HERE, 'data')`. Otherwise, Task 8 uses that folder plus `/school_bells`.
 - **Port:** if the `curl.exe` check failed, stop and tell the user. The spec says a blocked port means revising the design.
-- **Config:** if `BELLS_PROBE` printed `None`, `envvars` don't reach Python. Task 7 then edits the `DATA_DIR` and `PORT` defaults in `main.py` instead of `program.json`.
 - **Clock:** if the local time or offset is wrong for the school, tell the user so they can fix the controller's time zone and NTP settings in the Muse web UI before relying on bells.
 
 Append this section to the end of the spec, filled in with the observed values:
 ```markdown
-## Phase 0 results (2026-10-12)
+## Phase 0 results (<date>)
 
-- Port 8080 reachable from the LAN: yes
+- Port 8080 reachable from the LAN: <yes/no>
 - `__file__` defined: <yes/no>; program folder: <path>
+- Program folder kept files after a reload: <yes/no>; after a reboot: <yes/no>
 - Persistent data folder: <path> (<free MB> MB free)
-- `envvars` visible in `os.environ`: <yes/no>
 - Controller local time and offset: <value>; NTP config present: <files found>
 ```
 
-- [ ] **Step 5: Restore program.json and remove the probe**
-
-Restore `program.json` to `"script": "main.py"` and `"envvars": {}`. Then delete the probe:
-```powershell
-Remove-Item env_probe.py
-```
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```powershell
-git add program.json docs/superpowers/specs/2026-10-12-school-bells-web-design.md
+git add docs/superpowers/specs/2026-10-12-school-bells-web-design.md
 git commit -m "Record controller environment probe results"
 ```
 
@@ -344,7 +226,7 @@ git commit -m "Record controller environment probe results"
 ### Task 2: Bell schedule logic and storage (`bells.py`)
 
 **Files:**
-- Create: `bells.py`
+- Create: `school_bells/bells.py`
 - Test: `tests/test_bells.py`
 
 **Interfaces:**
@@ -504,7 +386,7 @@ def test_store_bells_using(tmp_path, log):
 
 - [ ] **Step 2: Run the tests to confirm they fail**
 
-Run: `py -3.10 -m pytest tests/test_bells.py -v`
+Run: `.venv\Scripts\python -m pytest tests/test_bells.py -v`
 Expected: collection error `ModuleNotFoundError: No module named 'bells'`.
 
 - [ ] **Step 3: Write `bells.py`**
@@ -695,13 +577,13 @@ class Store:
 
 - [ ] **Step 4: Run the tests to confirm they pass**
 
-Run: `py -3.10 -m pytest tests/test_bells.py -v`
+Run: `.venv\Scripts\python -m pytest tests/test_bells.py -v`
 Expected: all tests pass.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add bells.py tests/test_bells.py
+git add school_bells/bells.py tests/test_bells.py
 git commit -m "Add bell schedule validation, storage, and due-bell logic"
 ```
 
@@ -710,7 +592,7 @@ git commit -m "Add bell schedule validation, storage, and due-bell logic"
 ### Task 3: Sound files (`sounds.py`)
 
 **Files:**
-- Create: `sounds.py`
+- Create: `school_bells/sounds.py`
 - Test: `tests/test_sounds.py`
 
 **Interfaces:**
@@ -802,7 +684,7 @@ def test_apply_gain_scales_and_clamps():
 
 - [ ] **Step 2: Run the tests to confirm they fail**
 
-Run: `py -3.10 -m pytest tests/test_sounds.py -v`
+Run: `.venv\Scripts\python -m pytest tests/test_sounds.py -v`
 Expected: `ModuleNotFoundError: No module named 'sounds'`.
 
 - [ ] **Step 3: Write `sounds.py`**
@@ -885,13 +767,13 @@ def apply_gain(frames, gain):
 
 - [ ] **Step 4: Run the tests to confirm they pass**
 
-Run: `py -3.10 -m pytest tests/test_sounds.py -v`
+Run: `.venv\Scripts\python -m pytest tests/test_sounds.py -v`
 Expected: all tests pass.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add sounds.py tests/test_sounds.py
+git add school_bells/sounds.py tests/test_sounds.py
 git commit -m "Add sound name rules, WAV checks, and gain"
 ```
 
@@ -902,7 +784,7 @@ git commit -m "Add sound name rules, WAV checks, and gain"
 This task moves the proven streamer out of the current `main.py` and into a `Player` class that plays WAV files on a worker thread and can be stopped. Only the chunking logic can be tested on the PC. Playback is checked on the controller in Task 7.
 
 **Files:**
-- Create: `audio.py`
+- Create: `school_bells/audio.py`
 - Test: `tests/test_audio.py`
 
 **Interfaces:**
@@ -959,7 +841,7 @@ def test_importing_audio_does_not_load_libusb():
 
 - [ ] **Step 2: Run the tests to confirm they fail**
 
-Run: `py -3.10 -m pytest tests/test_audio.py -v`
+Run: `.venv\Scripts\python -m pytest tests/test_audio.py -v`
 Expected: `ModuleNotFoundError: No module named 'audio'`.
 
 - [ ] **Step 3: Write `audio.py`**
@@ -1238,13 +1120,13 @@ class Player:
 
 - [ ] **Step 4: Run the tests to confirm they pass**
 
-Run: `py -3.10 -m pytest tests/test_audio.py -v`
+Run: `.venv\Scripts\python -m pytest tests/test_audio.py -v`
 Expected: all tests pass.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add audio.py tests/test_audio.py
+git add school_bells/audio.py tests/test_audio.py
 git commit -m "Add a stoppable USB audio player for WAV files"
 ```
 
@@ -1253,12 +1135,13 @@ git commit -m "Add a stoppable USB audio player for WAV files"
 ### Task 5: Scheduler (`scheduler.py`)
 
 **Files:**
-- Create: `scheduler.py`
+- Create: `school_bells/scheduler.py`
 - Test: `tests/test_scheduler.py`
 
 **Interfaces:**
 - Consumes: `bells.Store.get()`, `bells.due_bells(state, now, rung)`, and `Player.play(path, gain)`.
-- Produces: `Scheduler(store, player, sounds_dir, log, clock=datetime.now)` with `prime(now)`, `tick(now) -> list[str]` (the ids of the bells rung), and `start()`, which primes the scheduler and then ticks every second on a daemon thread.
+- Produces: `Scheduler(store, player, sounds_dir, log, clock=datetime.now, events=None)` with `prime(now)`, `tick(now) -> list[str]` (the ids of the bells handled), and `start()`, which primes the scheduler and then ticks every second on a daemon thread.
+- `events`, when given, is any object with `bell_rang(bell)` and `error(message)`. Task 7's `TouchPoints` is that object in production. The scheduler calls `bell_rang` after each successful play, and sends errors to `events.error` instead of `log.error`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1353,11 +1236,38 @@ def test_midnight_bell_rings_on_consecutive_days(env):
     sched.tick(at(12, 0, 0))
     sched.tick(at(13, 0, 0))
     assert len(player.plays) == 2
+
+
+class RecordingEvents:
+    def __init__(self):
+        self.rang = []
+        self.errors = []
+
+    def bell_rang(self, bell):
+        self.rang.append(bell['id'])
+
+    def error(self, message):
+        self.errors.append(message)
+
+
+def test_events_receive_rings_and_errors_instead_of_log(env, log):
+    _, store, player, sounds_dir = env
+    events = RecordingEvents()
+    sched = scheduler.Scheduler(store, player, str(sounds_dir), log, events=events)
+    sched.tick(at(12, 11, 0))
+    assert events.rang == ['r1']
+    player.fail = AudioError('The USB audio adapter is not connected')
+    sched.tick(at(13, 11, 0))
+    (sounds_dir / 'recess.wav').unlink()
+    sched.tick(at(14, 11, 0))
+    assert events.rang == ['r1']
+    assert 'not connected' in events.errors[0] and 'missing' in events.errors[1]
+    assert log.errors == []
 ```
 
 - [ ] **Step 2: Run the tests to confirm they fail**
 
-Run: `py -3.10 -m pytest tests/test_scheduler.py -v`
+Run: `.venv\Scripts\python -m pytest tests/test_scheduler.py -v`
 Expected: `ModuleNotFoundError: No module named 'scheduler'`.
 
 - [ ] **Step 3: Write `scheduler.py`**
@@ -1373,13 +1283,20 @@ import bells
 
 
 class Scheduler:
-    def __init__(self, store, player, sounds_dir, log, clock=datetime.now):
+    def __init__(self, store, player, sounds_dir, log, clock=datetime.now, events=None):
         self._store = store
         self._player = player
         self._sounds_dir = sounds_dir
         self._log = log
         self._clock = clock
+        self._events = events  # has bell_rang(bell) and error(message), or None
         self._rung = set()  # (bell id, ISO date) pairs; memory only
+
+    def _error(self, message):
+        if self._events is not None:
+            self._events.error(message)
+        else:
+            self._log.error(message)
 
     def prime(self, now):
         """Mark bells in now's minute as rung, so a restart can't ring them twice."""
@@ -1400,14 +1317,17 @@ class Scheduler:
             name = b['label'] or b['time']
             path = os.path.join(self._sounds_dir, b['sound'])
             if not os.path.isfile(path):
-                self._log.error('Bell "%s" at %s: sound %s is missing' % (name, b['time'], b['sound']))
+                self._error('Bell "%s" at %s: sound %s is missing' % (name, b['time'], b['sound']))
                 continue
             gain = state['master_volume'] / 100 * b['volume'] / 100
             try:
                 self._player.play(path, gain)
-                self._log.info('Rang bell "%s" at %s' % (name, b['time']))
             except Exception as e:
-                self._log.error('Bell "%s" at %s failed: %s' % (name, b['time'], e))
+                self._error('Bell "%s" at %s failed: %s' % (name, b['time'], e))
+                continue
+            self._log.info('Rang bell "%s" at %s' % (name, b['time']))
+            if self._events is not None:
+                self._events.bell_rang(b)
         return handled
 
     def start(self):
@@ -1425,13 +1345,13 @@ class Scheduler:
 
 - [ ] **Step 4: Run the tests to confirm they pass**
 
-Run: `py -3.10 -m pytest tests/test_scheduler.py -v`
+Run: `.venv\Scripts\python -m pytest tests/test_scheduler.py -v`
 Expected: all tests pass.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add scheduler.py tests/test_scheduler.py
+git add school_bells/scheduler.py tests/test_scheduler.py
 git commit -m "Add the bell scheduler thread"
 ```
 
@@ -1440,7 +1360,7 @@ git commit -m "Add the bell scheduler thread"
 ### Task 6: Web server and JSON API (`web.py`)
 
 **Files:**
-- Create: `web.py`
+- Create: `school_bells/web.py`
 - Test: `tests/test_web.py`
 
 **Interfaces:**
@@ -1606,7 +1526,7 @@ def test_unknown_route_is_404(app):
 
 - [ ] **Step 2: Run the tests to confirm they fail**
 
-Run: `py -3.10 -m pytest tests/test_web.py -v`
+Run: `.venv\Scripts\python -m pytest tests/test_web.py -v`
 Expected: `ModuleNotFoundError: No module named 'web'`.
 
 - [ ] **Step 3: Write `web.py`**
@@ -1788,28 +1708,426 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
 
 - [ ] **Step 4: Run the tests to confirm they pass**
 
-Run: `py -3.10 -m pytest tests -v`
+Run: `.venv\Scripts\python -m pytest tests -v`
 Expected: every test in the suite passes.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add web.py tests/test_web.py
+git add school_bells/web.py tests/test_web.py
 git commit -m "Add the bell web server and JSON API"
 ```
 
 ---
 
-### Task 7: Wire up `main.py` and smoke-test on the controller
+### Task 7: Touch points for other MUSE programs (`touchpoints.py`)
 
 **Files:**
-- Modify: `main.py` (replace the whole test-tone script)
-- Modify: `program.json` (`envvars`, if Task 1 says so)
+- Create: `school_bells/touchpoints.py`
+- Modify: `tests/helpers.py` (add `FakeExport`)
+- Test: `tests/test_touchpoints.py`
 
 **Interfaces:**
-- Consumes: `bells.Store(path, log)`, `audio.Player(log)`, `scheduler.Scheduler(store, player, sounds_dir, log).start()`, `web.make_server(port, store, player, sounds_dir, static_dir, log)`, and the Phase 0 results in the spec.
+- Consumes: `bells.Store` (`get`, `set_settings`), `bells.next_bell`, `bells.check_volume`, `bells.ValidationError`, `sounds.sound_exists`, and the Player interface (`play`, `stop`, `playing`).
+- Produces:
+  - `TouchPoints(export, store, player, sounds_dir, log, clock=datetime.now)`.
+  - `handlers() -> dict` with plain functions `set_enabled(value)`, `set_master_volume(value)`, `play_sound(args)`, and `stop_sound()`. `main.py` adds them to its globals.
+  - `values() -> dict` holds the five param values.
+  - `publish()` sends changed params only, and `start()` publishes, goes online, and then republishes changes every second.
+  - `error(message)` logs the message and publishes it as `last_error`, and `bell_rang(bell)` dispatches the event. Together these two methods are the `events` object that Task 5's `Scheduler` takes.
+  - Helpers: `to_bool(value)`, `to_volume(value)`, `sound_argument(args)`, and `describe_next(next_bell)`.
+- MUSE fact this relies on (from `muse_control_extension/docs/reference/mojo.py:1221-1244`): MUSE counts a handler's parameters with `inspect.getfullargspec(f)[0]`. A setter with one parameter gets `f(value)`. A command with zero parameters gets `f()`, and one with one parameter gets `f(args)`. `getfullargspec` counts `self` on a bound method, so handlers must be plain functions, not methods.
 
-- [ ] **Step 1: Replace `main.py`**
+- [ ] **Step 1: Add `FakeExport` to `tests/helpers.py`**
+
+Append:
+```python
+class FakeExport:
+    """Stands in for context.export and records what it sends to MUSE."""
+
+    def __init__(self):
+        self.updates = []
+        self.dispatches = []
+        self.calls = []
+
+    def update(self, path, value, normalized=None):
+        self.updates.append((path, value))
+        self.calls.append('update')
+
+    def dispatch(self, path, args=None):
+        self.dispatches.append((path, args))
+        self.calls.append('dispatch')
+
+    def online(self):
+        self.calls.append('online')
+
+    def offline(self):
+        self.calls.append('offline')
+```
+
+- [ ] **Step 2: Write the failing tests**
+
+`tests/test_touchpoints.py`:
+```python
+import inspect
+import types
+from datetime import datetime
+
+import pytest
+
+import bells
+import touchpoints
+from audio import AudioError
+from helpers import FakeExport, FakePlayer, make_wav
+
+NOW = datetime(2026, 10, 12, 10, 52, 7)  # Monday
+
+
+@pytest.fixture
+def tp(tmp_path, log):
+    sounds_dir = tmp_path / 'sounds'
+    sounds_dir.mkdir()
+    (sounds_dir / 'recess.wav').write_bytes(make_wav(0.1))
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    store.set_bells([{'id': 'r1', 'label': 'Recess', 'time': '11:00',
+                      'days': ['mon', 'tue', 'wed', 'thu', 'fri'], 'sound': 'recess.wav', 'volume': 50}])
+    export, player = FakeExport(), FakePlayer()
+    points = touchpoints.TouchPoints(export, store, player, str(sounds_dir), log, clock=lambda: NOW)
+    return types.SimpleNamespace(tp=points, h=points.handlers(), export=export, player=player,
+                                 store=store, log=log)
+
+
+def test_handler_arities_match_muse_dispatch(tp):
+    arity = {name: len(inspect.getfullargspec(f)[0]) for name, f in tp.h.items()}
+    assert arity == {'set_enabled': 1, 'set_master_volume': 1, 'play_sound': 1, 'stop_sound': 0}
+
+
+def test_publish_sends_everything_once_then_only_changes(tp):
+    tp.tp.publish()
+    assert dict(tp.export.updates) == {'enabled': True, 'master_volume': 80, 'playing': '',
+                                       'next_bell': 'Mon 11:00 Recess', 'last_error': ''}
+    tp.export.updates.clear()
+    tp.tp.publish()
+    assert tp.export.updates == []
+    tp.store.set_settings({'master_volume': 40})  # a change made from the web page
+    tp.tp.publish()
+    assert tp.export.updates == [('master_volume', 40)]
+
+
+@pytest.mark.parametrize('value,expected', [(False, False), (0, False), ('false', False),
+                                            ('TRUE', True), (1, True)])
+def test_set_enabled_accepts_loose_values(tp, value, expected):
+    tp.h['set_enabled'](value)
+    assert tp.store.get()['enabled'] is expected
+    assert ('enabled', expected) in tp.export.updates
+
+
+@pytest.mark.parametrize('value', ['maybe', 2, None])
+def test_set_enabled_rejects_bad_value_without_raising(tp, value):
+    tp.h['set_enabled'](value)
+    assert tp.store.get()['enabled'] is True
+    assert 'enabled' in tp.tp.values()['last_error']
+    assert tp.log.errors
+
+
+@pytest.mark.parametrize('value,expected', [(30, 30), ('45', 45), (60.0, 60)])
+def test_set_master_volume_accepts_whole_numbers(tp, value, expected):
+    tp.h['set_master_volume'](value)
+    assert tp.store.get()['master_volume'] == expected
+
+
+@pytest.mark.parametrize('value', [101, -1, '1e3', 'loud', True, 12.5])
+def test_set_master_volume_rejects_bad_value_without_raising(tp, value):
+    tp.h['set_master_volume'](value)
+    assert tp.store.get()['master_volume'] == 80
+    assert 'master_volume' in tp.tp.values()['last_error']
+
+
+@pytest.mark.parametrize('args', [{'sound': 'recess.wav'}, 'recess.wav', ['recess.wav']])
+def test_play_accepts_map_string_or_list(tp, args):
+    tp.h['play_sound'](args)
+    [(path, gain)] = tp.player.plays
+    assert path.endswith('recess.wav')
+    assert gain == pytest.approx(0.8)
+    assert ('playing', 'recess.wav') in tp.export.updates
+
+
+def test_play_unknown_or_unsafe_sound_sets_last_error(tp):
+    tp.h['play_sound']({'sound': '../bells.json'})
+    assert 'does not exist' in tp.tp.values()['last_error']
+    tp.h['play_sound']({})
+    assert 'needs a sound name' in tp.tp.values()['last_error']
+    assert tp.player.plays == []
+
+
+def test_play_adapter_failure_sets_last_error(tp):
+    tp.player.fail = AudioError('The USB audio adapter is not connected')
+    tp.h['play_sound']('recess.wav')
+    assert tp.tp.values()['last_error'] == 'play failed: The USB audio adapter is not connected'
+
+
+def test_stop(tp):
+    tp.h['stop_sound']()
+    assert tp.player.stops == 1
+
+
+def test_bell_rang_dispatches_event(tp):
+    tp.tp.bell_rang(tp.store.get()['bells'][0])
+    assert tp.export.dispatches == [('bell_rang', {'id': 'r1', 'label': 'Recess', 'time': '11:00',
+                                                   'sound': 'recess.wav'})]
+
+
+def test_error_logs_and_publishes(tp):
+    tp.tp.error('Bell "Recess" at 11:00: sound recess.wav is missing')
+    assert tp.log.errors == ['Bell "Recess" at 11:00: sound recess.wav is missing']
+    assert ('last_error', 'Bell "Recess" at 11:00: sound recess.wav is missing') in tp.export.updates
+
+
+def test_next_bell_is_empty_when_disabled(tp):
+    tp.store.set_settings({'enabled': False})
+    assert tp.tp.values()['next_bell'] == ''
+
+
+def test_describe_next_omits_empty_label():
+    assert touchpoints.describe_next({'id': 'x', 'label': '', 'time': '08:45',
+                                      'date': '2026-10-18'}) == 'Sun 08:45'
+    assert touchpoints.describe_next(None) == ''
+
+
+def test_start_publishes_then_goes_online(tp):
+    tp.tp.start()
+    assert tp.export.calls[:6] == ['update'] * 5 + ['online']
+```
+
+- [ ] **Step 3: Run the tests to confirm they fail**
+
+Run: `.venv\Scripts\python -m pytest tests/test_touchpoints.py -v`
+Expected: `ModuleNotFoundError: No module named 'touchpoints'`.
+
+- [ ] **Step 4: Write `school_bells/touchpoints.py`**
+
+```python
+"""Touch points that let other MUSE programs control and watch the bells.
+
+Other programs reach this program with context.devices.get('school_bells').
+program.json declares the touch points, and this module handles them.
+"""
+import os
+import threading
+import time
+from datetime import date, datetime
+
+import bells
+import sounds
+
+DAY_NAMES = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
+_UNSET = object()
+
+
+def to_bool(value):
+    """Accept the loose forms MUSE and other programs might send for a boolean."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str) and value.strip().lower() in ('true', 'false', '1', '0'):
+        return value.strip().lower() in ('true', '1')
+    raise bells.ValidationError('enabled must be true or false, not %r' % (value,))
+
+
+def to_volume(value):
+    """Accept a whole number from 0 to 100, as a number or a numeric string."""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    elif isinstance(value, str):
+        try:
+            value = int(value.strip())
+        except ValueError:
+            raise bells.ValidationError('master_volume must be a whole number from 0 to 100')
+    return bells.check_volume(value, 'master_volume')
+
+
+def sound_argument(args):
+    """Return the sound name from a command's arguments: a map, a string, or a one-item list."""
+    if isinstance(args, str):
+        return args
+    if isinstance(args, (list, tuple)) and len(args) == 1:
+        return str(args[0])
+    getter = getattr(args, 'get', None)
+    if getter is not None:
+        value = getter('sound')
+        if value is not None:
+            return str(value)
+    raise bells.ValidationError('play needs a sound name')
+
+
+def describe_next(next_bell):
+    """Format bells.next_bell() output as 'Mon 11:00 Recess', or '' for no bell."""
+    if next_bell is None:
+        return ''
+    day = DAY_NAMES[date.fromisoformat(next_bell['date']).weekday()]
+    return ('%s %s %s' % (day, next_bell['time'], next_bell['label'])).strip()
+
+
+class TouchPoints:
+    def __init__(self, export, store, player, sounds_dir, log, clock=datetime.now):
+        self._export = export
+        self._store = store
+        self._player = player
+        self._sounds_dir = sounds_dir
+        self._log = log
+        self._clock = clock
+        self._last_error = ''
+        self._published = {}
+        self._lock = threading.Lock()
+
+    def handlers(self):
+        """Return the set and command handlers that program.json names.
+
+        These are plain functions, because MUSE counts parameters to decide how
+        to call a handler, and a bound method's self would be counted.
+        """
+        def set_enabled(value):
+            self._apply('enabled', lambda: self._store.set_settings({'enabled': to_bool(value)}))
+
+        def set_master_volume(value):
+            self._apply('master_volume',
+                        lambda: self._store.set_settings({'master_volume': to_volume(value)}))
+
+        def play_sound(args):
+            self._apply('play', lambda: self._play(sound_argument(args)))
+
+        def stop_sound():
+            self._apply('stop', self._player.stop)
+
+        return {'set_enabled': set_enabled, 'set_master_volume': set_master_volume,
+                'play_sound': play_sound, 'stop_sound': stop_sound}
+
+    def _apply(self, what, action):
+        # Handlers never raise into MUSE; failures land in last_error.
+        try:
+            action()
+        except Exception as e:
+            self.error('%s failed: %s' % (what, e))
+        self.publish()
+
+    def _play(self, name):
+        if not sounds.sound_exists(self._sounds_dir, name):
+            raise bells.ValidationError('sound %s does not exist' % name)
+        gain = self._store.get()['master_volume'] / 100
+        self._player.play(os.path.join(self._sounds_dir, name), gain)
+
+    def error(self, message):
+        """Log message and publish it as last_error."""
+        self._log.error(message)
+        self._last_error = message
+        self.publish()
+
+    def bell_rang(self, bell):
+        self._export.dispatch('bell_rang', {'id': bell['id'], 'label': bell['label'],
+                                            'time': bell['time'], 'sound': bell['sound']})
+
+    def values(self):
+        state = self._store.get()
+        return {
+            'enabled': state['enabled'],
+            'master_volume': state['master_volume'],
+            'playing': self._player.playing or '',
+            'next_bell': describe_next(bells.next_bell(state, self._clock())),
+            'last_error': self._last_error,
+        }
+
+    def publish(self):
+        """Send each param whose value changed since the last publish."""
+        with self._lock:
+            for name, value in self.values().items():
+                if self._published.get(name, _UNSET) != value:
+                    self._export.update(name, value)
+                    self._published[name] = value
+
+    def start(self):
+        self.publish()
+        self._export.online()
+        threading.Thread(target=self._loop, daemon=True, name='bell-touchpoints').start()
+
+    def _loop(self):
+        while True:
+            time.sleep(1.0)
+            try:
+                self.publish()
+            except Exception as e:
+                self._log.error('Touch-point publish failed: %r' % e)
+```
+
+- [ ] **Step 5: Run the tests to confirm they pass**
+
+Run: `.venv\Scripts\python -m pytest -q`
+Expected: every test in the suite passes.
+
+- [ ] **Step 6: Commit**
+
+```powershell
+git add school_bells/touchpoints.py tests/helpers.py tests/test_touchpoints.py
+git commit -m "Add touch points for other MUSE programs"
+```
+
+---
+
+### Task 8: Wire up `main.py` and smoke-test on the controller
+
+**Files:**
+- Modify: `school_bells/program.json` (replace it: `.metadata` form plus touch points)
+- Modify: `school_bells/main.py` (replace the whole test-tone script)
+- Create: `tools/tp_check/program.json`
+- Create: `tools/tp_check/main.py`
+
+**Interfaces:**
+- Consumes: `bells.Store(path, log)`, `audio.Player(log)`, `touchpoints.TouchPoints(export, store, player, sounds_dir, log)` with `handlers()` and `start()`, `scheduler.Scheduler(store, player, sounds_dir, log, events=...)` with `start()`, `web.make_server(port, store, player, sounds_dir, static_dir, log)`, and the Phase 0 results in the spec.
+
+- [ ] **Step 1: Replace `school_bells/program.json`**
+
+```json
+{
+  "$schema": "https://developer.amx.com/schema/amx-mojo-program-1.0.json",
+  ".metadata": {
+    "id": "school_bells",
+    "name": "school_bells",
+    "provider": "python",
+    "script": "main.py",
+    "disabled": false,
+    "description": "School bell scheduler: web page on port 8080, USB audio playback, and touch points"
+  },
+  "enabled": {
+    ".kind": "param", ".type": "boolean",
+    ".metadata": {"setter": "set_enabled", "desc": "Turns scheduled bells on or off"}
+  },
+  "master_volume": {
+    ".kind": "param", ".type": "integer", ".min": 0, ".max": 100,
+    ".metadata": {"setter": "set_master_volume", "desc": "Overall output level, 0 to 100"}
+  },
+  "playing": {".kind": "param", ".type": "string", ".access": "ro",
+              ".metadata": {"desc": "Sound playing now, or empty"}},
+  "next_bell": {".kind": "param", ".type": "string", ".access": "ro",
+                ".metadata": {"desc": "Next bell, such as Mon 11:00 Recess, or empty"}},
+  "last_error": {".kind": "param", ".type": "string", ".access": "ro",
+                 ".metadata": {"desc": "Latest scheduled-bell or touch-point error"}},
+  "play": {
+    ".kind": "command",
+    ".arguments": {"sound": {".type": "string"}},
+    ".metadata": {"method": "play_sound", "desc": "Plays a stored sound at the master volume"}
+  },
+  "stop": {".kind": "command", ".metadata": {"method": "stop_sound", "desc": "Stops playback"}},
+  "bell_rang": {
+    ".kind": "event",
+    ".arguments": {"id": {".type": "string"}, "label": {".type": "string"},
+                   "time": {".type": "string"}, "sound": {".type": "string"}}
+  }
+}
+```
+
+- [ ] **Step 2: Replace `school_bells/main.py`**
+
+Set `DATA_DIR` from the spec's Phase 0 results. If the program folder keeps files across a reload and a reboot, keep the line below. Otherwise, replace the right side with the recorded folder plus `/school_bells`, as a string.
 
 ```python
 import os
@@ -1824,50 +2142,110 @@ sys.path.insert(0, HERE)
 import audio  # noqa: E402
 import bells  # noqa: E402
 import scheduler  # noqa: E402
+import touchpoints  # noqa: E402
 import web  # noqa: E402
 
 log = context.log
-DATA_DIR = os.environ.get('BELLS_DATA_DIR') or os.path.join(HERE, 'data')
-PORT = int(os.environ.get('BELLS_PORT') or 8080)
+PORT = 8080
+DATA_DIR = os.path.join(HERE, 'data')  # set from the spec's Phase 0 results
 SOUNDS_DIR = os.path.join(DATA_DIR, 'sounds')
 os.makedirs(SOUNDS_DIR, exist_ok=True)
 
 store = bells.Store(os.path.join(DATA_DIR, 'bells.json'), log)
 player = audio.Player(log)
-scheduler.Scheduler(store, player, SOUNDS_DIR, log).start()
+touch = touchpoints.TouchPoints(context.export, store, player, SOUNDS_DIR, log)
+globals().update(touch.handlers())  # MUSE finds program.json's setters and methods here
+scheduler.Scheduler(store, player, SOUNDS_DIR, log, events=touch).start()
 server = web.make_server(PORT, store, player, SOUNDS_DIR, os.path.join(HERE, 'static'), log)
 threading.Thread(target=server.serve_forever, daemon=True, name='bell-web').start()
+touch.start()
 log.info('School bells running on port %d, data in %s' % (PORT, DATA_DIR))
 
 # leave this as the last line in the Python script
 context.run(globals())
 ```
 
-- [ ] **Step 2: Apply the Phase 0 data folder**
+- [ ] **Step 3: Write the touch-point check program**
 
-If the spec's Phase 0 results name a data folder other than the program folder, set it in `program.json`:
+`tools/tp_check/program.json`:
 ```json
-  "envvars": {"BELLS_DATA_DIR": "<persistent folder from Phase 0>/school_bells"}
+{
+  "$schema": "https://developer.amx.com/schema/amx-mojo-program-1.0.json",
+  ".metadata": {
+    "id": "tp_check",
+    "name": "tp_check",
+    "provider": "python",
+    "script": "main.py",
+    "disabled": false,
+    "description": "Diagnostic: reads, watches, and drives the school_bells touch points"
+  }
+}
 ```
-If `envvars` aren't visible to Python, edit the `DATA_DIR` default in `main.py` to that path instead.
 
-- [ ] **Step 3: Make a test sound on the PC**
+`tools/tp_check/main.py`:
+```python
+"""Checks the school_bells touch points from a second program.
+
+Load this program while school_bells is running, with tone.wav uploaded.
+"""
+from mojo import context
+
+log = context.log
+device = context.devices.get('school_bells')
+
+for name in ('enabled', 'master_volume', 'playing', 'next_bell', 'last_error'):
+    try:
+        log.info('%s = %r' % (name, getattr(device, name).value))
+    except Exception as e:
+        log.error('Reading %s failed: %r' % (name, e))
+
+device.playing.watch(lambda event: log.info('playing -> %r' % event.newValue))
+device.last_error.watch(lambda event: log.info('last_error -> %r' % event.newValue))
+device.listen('bell_rang', lambda event: log.info('bell_rang %r' % event.arguments))
+
+try:
+    device.play('tone.wav')
+    log.info('Sent play tone.wav')
+except Exception as e:
+    log.error('play command failed: %r' % e)
+
+# leave this as the last line in the Python script
+context.run(globals())
+```
+
+- [ ] **Step 4: Check the JSON files and run the suite**
 
 Run:
 ```powershell
-py -3.10 -c "import sys; sys.path.insert(0, 'tests'); from helpers import make_wav; open('tone.wav', 'wb').write(make_wav(2.0, tone_hz=1000))"
+.venv\Scripts\python -c "import json; [json.load(open(p)) for p in ('school_bells/program.json', 'tools/tp_check/program.json')]"
+.venv\Scripts\python -m pytest -q
+```
+Expected: no output from the first command, and every test passes.
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add school_bells/program.json school_bells/main.py tools/tp_check
+git commit -m "Run the bell scheduler, web server, and touch points from main.py"
 ```
 
-- [ ] **Step 4: Smoke-test on the controller (the user loads the program)**
+- [ ] **Step 6: Make a test sound on the PC**
 
-Ask the user to load the program, attach to it, and confirm that `School bells running on port 8080` appears. Then run, replacing `<controller-ip>`:
+Run:
+```powershell
+.venv\Scripts\python -c "import sys; sys.path.insert(0, 'tests'); from helpers import make_wav; open('tone.wav', 'wb').write(make_wav(2.0, tone_hz=1000))"
+```
+
+- [ ] **Step 7: Smoke-test on the controller (the user loads the programs)**
+
+Ask the user to load the `school_bells` folder as a program, attach to it, and confirm that `School bells running on port 8080` appears. Then run, replacing `<controller-ip>`:
 ```powershell
 $CTRL = "http://<controller-ip>:8080"
 curl.exe -s "$CTRL/api/state"
 curl.exe -s -X POST --data-binary "@tone.wav" -H "Content-Type: audio/wav" "$CTRL/api/sounds?name=tone.wav"
 curl.exe -s -X POST -H "Content-Type: application/json" -d '{\"sound\": \"tone.wav\"}' "$CTRL/api/play"
 ```
-Expected: the state JSON has the controller's time, the upload returns `{"name": "tone.wav", "seconds": 2.0}`, and the user hears a 2-second tone at 80% volume. Call `/api/stop` during a replay and confirm the tone cuts off.
+Expected: the state JSON has the controller's time, the upload returns `{"name": "tone.wav", "seconds": 2.0}`, and the user hears a 2-second tone at 80% volume. Play it again, call `/api/stop` during playback, and confirm the tone cuts off.
 
 Then schedule a bell two minutes ahead of the controller time shown in the state (example for 10:54 on a Monday):
 ```powershell
@@ -1875,23 +2253,28 @@ curl.exe -s -X PUT -H "Content-Type: application/json" -d '{\"bells\": [{\"label
 ```
 Expected: the tone plays once at that minute, and the log shows `Rang bell "Test" at 10:54`.
 
-- [ ] **Step 5: Remove the test sound file and commit**
+Finally, ask the user to load the `tools/tp_check` folder as a program and paste its output. Expected:
+- It logs the five param values, including `next_bell` and `master_volume = 80`.
+- It logs `playing -> 'tone.wav'` and the tone plays.
+- `playing` returns to `''` when the tone ends.
+
+Schedule another bell two minutes ahead with the same `curl.exe` command and confirm `tp_check` logs `bell_rang`. If any step fails, record the exact output in the ledger before changing code.
+
+- [ ] **Step 8: Remove the test sound file**
 
 ```powershell
 Remove-Item tone.wav
-git add main.py program.json
-git commit -m "Run the bell scheduler and web server from main.py"
 ```
 
 ---
 
-### Task 8: The bell page (`static/index.html`)
+### Task 9: The bell page (`school_bells/static/index.html`)
 
 Steps 1 to 3 build a working, plainly styled page with the full behavior. Step 4 restyles it to match the Claude Design export. **Step 4 is blocked until the user exports the design into `design/`.**
 
 **Files:**
 - Create: `tools/dev_server.py`
-- Create: `static/index.html`
+- Create: `school_bells/static/index.html`
 
 **Interfaces:**
 - Consumes: the Web API from Task 6.
@@ -1909,14 +2292,15 @@ Steps 1 to 3 build a working, plainly styled page with the full behavior. Step 4
 ```python
 """Runs the bell web server on this PC with a fake player, for working on the page.
 
-To use it, run `py -3.10 tools/dev_server.py`, then open http://localhost:8080/.
+To use it, run `.venv\Scripts\python tools/dev_server.py`, then open http://localhost:8080/.
 """
 import os
 import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+PROGRAM = os.path.join(ROOT, 'school_bells')
+sys.path.insert(0, PROGRAM)
 
 import bells  # noqa: E402
 import web  # noqa: E402
@@ -1947,14 +2331,14 @@ sounds_dir = os.path.join(data_dir, 'sounds')
 os.makedirs(sounds_dir, exist_ok=True)
 log = PrintLog()
 store = bells.Store(os.path.join(data_dir, 'bells.json'), log)
-server = web.make_server(8080, store, PrintPlayer(), sounds_dir, os.path.join(ROOT, 'static'), log)
+server = web.make_server(8080, store, PrintPlayer(), sounds_dir, os.path.join(PROGRAM, 'static'), log)
 print('Open http://localhost:8080/ (data in %s)' % data_dir)
 server.serve_forever()
 ```
 
 - [ ] **Step 2: Write the working page**
 
-`static/index.html`:
+`school_bells/static/index.html`:
 ```html
 <!doctype html>
 <html lang="en">
@@ -2334,7 +2718,7 @@ setInterval(renderClock, 1000);
 
 - [ ] **Step 3: Check the page on the PC**
 
-Run: `py -3.10 tools/dev_server.py`, then open `http://localhost:8080/` and confirm each item:
+Run: `.venv\Scripts\python tools/dev_server.py`, then open `http://localhost:8080/` and confirm each item:
 1. The clock ticks every second and matches the PC's time.
 2. Upload an MP3. The page shows "Converting…" and then "Uploading…", and the sound appears with the right duration.
 3. Add a bell for Monday to Friday at 11:00 with that sound. It appears with `M T W T F · ·`, and "Next bell" updates.
@@ -2346,12 +2730,12 @@ Run: `py -3.10 tools/dev_server.py`, then open `http://localhost:8080/` and conf
 - [ ] **Step 4: Restyle to match the design export (blocked until `design/` exists)**
 
 1. Open the exported files in `design/`.
-2. Rewrite the markup and `<style>` in `static/index.html` to match the design's layout, colors, type, and spacing.
+2. Rewrite the markup and `<style>` in `school_bells/static/index.html` to match the design's layout, colors, type, and spacing.
 3. Keep the `<script>` block exactly as written, and keep every part of the DOM contract in this task's Interfaces. Inline all CSS and any icons as SVG.
 4. Remove anything that loads from the network, then confirm nothing remains:
 
 ```powershell
-Select-String -Path static/index.html -Pattern '<link|src=|@import|url\(http|https?://'
+Select-String -Path school_bells/static/index.html -Pattern '<link|src=|@import|url\(http|https?://'
 ```
 Expected: no matches.
 
@@ -2369,10 +2753,11 @@ Load the program and work through the spec's controller checks:
 5. Change master and per-bell volume and confirm the level changes.
 6. Confirm stop works.
 7. Reboot and confirm the bells and sounds are still there.
+8. Load `tools/tp_check` and confirm it reads the params, plays a sound with the `play` command, and logs `bell_rang` when a bell rings.
 
 - [ ] **Step 7: Commit**
 
 ```powershell
-git add static/index.html tools/dev_server.py design
+git add school_bells/static/index.html tools/dev_server.py design
 git commit -m "Add the bell page"
 ```

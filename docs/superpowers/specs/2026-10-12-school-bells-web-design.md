@@ -42,10 +42,14 @@ Probes on 2026-10-12 established these facts about the controller:
 | Access control | None. The page is for a restricted network, and its footer says so. |
 | Audio formats | The browser converts uploads to 48 kHz, 16-bit stereo WAV before sending them. The controller stores and plays only that format. |
 | Playback controls | Play any sound now, stop, per-bell volume, and master volume. |
+| Program folder | The deployable program lives in `school_bells/`, named for its program ID. Loading a program uploads its whole folder, so tests, docs, and tools stay outside it. |
+| Other MUSE programs | Other programs control and watch the bells through touch points declared in `program.json`. See [Touch points](#touch-points). |
 
 ## Phase 0: controller environment probe
 
-Before building, a throwaway probe answers these questions on the controller:
+Before building, a probe program in `tools/env_probe/` answers these questions
+on the controller. It's a separate program, so loading it leaves the bell
+program untouched.
 
 1. Can a program listen on TCP port 8080, and can a PC on the LAN reach it?
 2. Which directory is writable and survives both a reboot and a program
@@ -55,35 +59,54 @@ Before building, a throwaway probe answers these questions on the controller:
 3. How much free space does that directory have?
 4. What are the controller's local time, time zone, and UTC offset? Is NTP
    configured?
-5. Does the program see `envvars` from `program.json` in `os.environ`?
 
 If any answer blocks this design, for example if no port is reachable, stop
 and revise the design before building.
 
 ## Architecture
 
+### Repository layout
+
+```
+school_bells/                 repository (never loaded to the controller)
+├─ school_bells/              the MUSE program: load this folder
+│  ├─ program.json            program metadata and touch points
+│  ├─ main.py  bells.py  sounds.py  audio.py  scheduler.py  web.py  touchpoints.py
+│  ├─ static/index.html
+│  └─ requirements.txt
+├─ tools/
+│  ├─ usb_probe/              USB diagnostic program (program.json + main.py)
+│  ├─ env_probe/              Phase 0 probe program
+│  └─ dev_server.py           runs the web server on the PC with a fake player
+├─ tests/  docs/  design/
+└─ pyproject.toml             points pytest at school_bells/ and tests/
+```
+
+### Program modules
+
+All modules below live in `school_bells/`.
+
 | File | Responsibility |
 |---|---|
-| `main.py` | Reads config, loads state, starts the web server and scheduler threads, then calls `context.run(globals())`. |
+| `main.py` | Loads state, starts the web server, scheduler, and touch points, adds the touch-point handlers to its globals, then calls `context.run(globals())`. |
 | `audio.py` | Owns the USB adapter. `Player.play(path, volume)` and `Player.stop()`. Plays one sound at a time on a worker thread; a new `play` stops the current sound. Streams WAV files in chunks with the standard `wave` module. Applies gain with `audioop.mul`, which is available in Python 3.10. |
 | `bells.py` | Pure logic with no USB or web code: bell validation, the bell list and settings, loading and saving `bells.json`, and finding which bells are due. |
 | `scheduler.py` | A thread that runs once per second, asks `bells.py` which bells are due, and calls `Player.play`. |
 | `web.py` | The HTTP server, static file serving, and the JSON API. |
 | `static/index.html` | The single page: HTML, CSS, and vanilla JavaScript in one file. |
-| `usb_probe.py` | The existing diagnostic probe, kept for troubleshooting. Not loaded by `main.py`. |
+| `touchpoints.py` | Handles sets and commands from other MUSE programs, publishes param changes, and dispatches the `bell_rang` event. Talks to MUSE only through the `context.export` object it's given, so tests can pass a fake. |
 
 ### Configuration
 
-The program reads these settings from `envvars` in `program.json`. Each has a
-default.
+Two constants at the top of `main.py` hold the settings:
 
-| Variable | Default | Purpose |
+| Constant | Value | Purpose |
 |---|---|---|
-| `BELLS_PORT` | `8080` | Web server port. |
-| `BELLS_DATA_DIR` | Set from the Phase 0 result | Folder for `bells.json` and `sounds/`. |
+| `PORT` | `8080` | Web server port. |
+| `DATA_DIR` | Set from the Phase 0 result | Folder for `bells.json` and `sounds/`. |
 
-If Phase 0 shows that `envvars` don't reach `os.environ`, these become
-constants at the top of `main.py`.
+The program doesn't use `envvars`, because the extension project only verified
+the `.metadata` form of `program.json`, and `envvars` haven't been tested in it.
 
 ## Data
 
@@ -153,6 +176,49 @@ All bodies are JSON unless stated otherwise. Errors return a 4xx status with
 The page polls `GET /api/state` every 2 seconds to update the clock, the
 "Now playing" indicator, and the next bell.
 
+## Touch points
+
+Other MUSE programs on the controller reach the bell program with
+`context.devices.get('school_bells')`. The touch points follow the conventions
+that the `muse_control_extension` project verified on firmware v1.4.118.
+
+### Declaration
+
+`program.json` puts the program's details under `.metadata`, and declares each
+touch point as a top-level key. The `id` and `name` are both `school_bells`,
+matching the folder name.
+
+| Touch point | Kind | Handler | Behavior |
+|---|---|---|---|
+| `enabled` | Param, `boolean` | setter `set_enabled` | Turns scheduled bells on or off. |
+| `master_volume` | Param, `integer`, 0 to 100 | setter `set_master_volume` | Sets the overall output level. |
+| `playing` | Param, `string`, read-only | | The sound playing now, or `""`. |
+| `next_bell` | Param, `string`, read-only | | The next bell as `Mon 11:00 Recess`, or `""` when none is due. |
+| `last_error` | Param, `string`, read-only | | The latest error from a scheduled bell or a touch-point command. |
+| `play` | Command, one argument `sound` (`string`) | method `play_sound` | Plays a stored sound at the master volume. |
+| `stop` | Command, no arguments | method `stop_sound` | Stops playback. |
+| `bell_rang` | Event with `id`, `label`, `time`, and `sound` | | Fires each time the schedule rings a bell. |
+
+### Rules
+
+- Handler names are distinct from the touch-point names (`play_sound`, not
+  `play`), so they can't clash with other names in `main.py`'s globals.
+- Commands take at most one argument. MUSE passes command arguments by
+  position, and the order of multiple arguments hasn't been verified.
+- MUSE calls a command handler with one argument: the argument map, or the
+  value itself. `play_sound` accepts a map with a `sound` key, a plain string,
+  or a one-item list.
+- Set handlers accept loosely typed values: `enabled` accepts `true`, `false`,
+  `1`, `0`, and the strings `"true"` and `"false"`. `master_volume` accepts any
+  whole number from 0 to 100, including a numeric string.
+- A handler never raises into MUSE. An invalid value or a failed play is
+  logged and stored in `last_error`.
+- The program publishes each param when its value changes, whether the change
+  came from a touch point, the web page, or the schedule. It checks for changes
+  once per second.
+- At startup, the program publishes every param and then calls
+  `context.export.online()`.
+
 ## Page
 
 The page's visual design comes from the Claude Design project at
@@ -209,12 +275,14 @@ The wireframe below sets the content and behavior.
 
 ## Testing
 
-- **On the PC:** install Python 3.10 (`winget install Python.Python.3.10`),
-  then run unit tests with `pytest`. They cover:
+- **On the PC:** run unit tests with `pytest` from the repository's `.venv`.
+  They cover:
   - `bells.py`: due-bell logic, including the restart, clock-jump, master-switch,
     and clash rules; validation; and atomic save and load.
   - WAV validation and gain.
   - The web API, run against a fake `Player` on a local port.
+  - The touch-point handlers and publishing, run against a fake
+    `context.export`.
 - **On the controller,** check manually:
   1. The page loads from a LAN PC and a phone.
   2. Upload an MP3 and confirm it plays.
@@ -224,6 +292,8 @@ The wireframe below sets the content and behavior.
   5. Change master and per-bell volume and confirm the level changes.
   6. Confirm stop works.
   7. Reboot and confirm the bells and sounds are still there.
+  8. Load the `tools/tp_check/` program and confirm it reads the params, plays
+     a sound with the `play` command, and logs `bell_rang` when a bell rings.
 
 ## Out of scope
 
