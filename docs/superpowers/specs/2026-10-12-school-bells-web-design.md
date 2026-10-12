@@ -272,6 +272,11 @@ confirmed its use for this internal page.
 
 ### Today tab (as designed)
 
+At the user's request, the Today tab uses tighter spacing than the design, so it
+fits a 1920×1080 screen. On displays at least 1000 px wide and 640 px tall, the
+tab fills the window with no page scrolling. A schedule too long to fit
+scrolls inside its panel and keeps the NEXT row in view.
+
 - **Hero:**
   - Eyebrow: "Next bell · {weekday D month}", in `en-AU` form.
   - The next bell's time and label, from `next_bell`.
