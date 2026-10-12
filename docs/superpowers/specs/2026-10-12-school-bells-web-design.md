@@ -509,3 +509,23 @@ Notes:
 - Deleting a sound still asks for confirmation, although the design doesn't
   show one, because an uploaded file can't be recovered.
 - The "Scheduled bells are off" banner shows under the nav on every tab.
+
+## Connection loss (2026-10-12)
+
+- **Timeout:** each state poll gives up after 5 seconds.
+- **Detecting the loss:** two failed polls in a row, or one before the page
+  has any data, put the page in a disconnected state:
+  - A red banner reads "Can't reach the bell controller. Retrying… Last update
+    at HH:MM.", using the controller's time from the last successful poll.
+  - The header status reads "Not connected".
+  - The clock, hero time, and countdown freeze and dim, so nobody trusts stale
+    times.
+  - The tabs' content dims and becomes inert, so controls can't be used.
+- **Recovery:** the next successful poll clears the state, redraws the page,
+  and shows "Reconnected to the bell controller." for 3 seconds.
+- **Failed actions:** an action that fails because the controller can't be
+  reached shows "Can't reach the bell controller. Check the network, then try
+  again." in the normal error banner, instead of the browser's generic
+  message.
+- **Limit:** from the browser's side, a stopped program and a network outage
+  look the same, so the page reports both as "Can't reach the bell controller".

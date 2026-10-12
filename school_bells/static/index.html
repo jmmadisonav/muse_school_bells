@@ -271,6 +271,14 @@
   .off-banner { background: var(--dark); color: var(--white); border-top: 1px solid var(--grey); }
   .off-banner .wrap { padding-top: 12px; padding-bottom: 12px; display: flex; align-items: center; gap: 12px; font-size: 14px; }
   .off-banner i { flex: none; width: 8px; height: 8px; background: var(--muted); }
+  /* Connection to the controller */
+  .conn-banner { color: var(--white); background: var(--red); }
+  .conn-banner.back { background: var(--dark); }
+  .conn-banner .wrap { padding-top: 12px; padding-bottom: 12px; display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  .conn-banner i { flex: none; width: 8px; height: 8px; background: var(--white); }
+  body.disconnected .clock, body.disconnected .hero-time, body.disconnected .hero-label,
+  body.disconnected .hero-countdown { opacity: .35; }
+  body.disconnected [data-page] { opacity: .6; }
   @media (max-width: 760px) {
     .sch-bells { grid-column: auto; }
     .sch-cols { display: none; }
@@ -309,6 +317,10 @@
     </div>
   </nav>
 </header>
+
+<div class="conn-banner" id="conn-banner" role="status" hidden>
+  <div class="wrap"><i></i><span id="conn-message"></span></div>
+</div>
 
 <div class="off-banner" id="off-banner" hidden>
   <div class="wrap"><i></i>Scheduled bells are off. Nothing will ring until you turn them back on.</div>
@@ -518,13 +530,27 @@ function h(tag, attrs = {}, ...children) {
   return node;
 }
 
-async function api(method, path, body, contentType) {
+const POLL_TIMEOUT_MS = 5000;
+
+// timeoutMs aborts a request that hangs, for example when the network drops mid-request.
+async function api(method, path, body, contentType, timeoutMs) {
   const options = { method, headers: {} };
+  if (timeoutMs) {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), timeoutMs);
+    options.signal = controller.signal;
+  }
   if (body !== undefined) {
     options.body = contentType ? body : JSON.stringify(body);
     options.headers['Content-Type'] = contentType || 'application/json';
   }
-  const response = await fetch(path, options);
+  let response;
+  try {
+    response = await fetch(path, options);
+  } catch {
+    // The browser's own messages ("Failed to fetch" and so on) don't say what went wrong.
+    throw new Error("Can't reach the bell controller. Check the network, then try again.");
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(data.error || `${response.status} ${response.statusText}`);
@@ -548,13 +574,59 @@ async function run(action) {
 }
 
 async function refresh() {
-  state = await api('GET', '/api/state');
+  state = await api('GET', '/api/state', undefined, undefined, POLL_TIMEOUT_MS);
   const match = state.time.match(/([+-])(\d\d):(\d\d)$/);
   const offsetMs = match
     ? (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3])) * 60000
     : 0;
   clockBase = { serverMs: Date.parse(state.time), localMs: Date.now(), offsetMs };
   render();
+}
+
+// ---- Connection to the controller ----
+let connectionLost = false;
+let failedPolls = 0;
+let reconnectTimer = null;
+
+// Poll the controller. Two failures in a row (one before the first success) mean the
+// connection is lost; the next success restores it.
+async function poll() {
+  try {
+    await refresh();
+  } catch {
+    failedPolls += 1;
+    if (!connectionLost && (failedPolls >= 2 || !state)) setConnectionLost(true);
+    return;
+  }
+  failedPolls = 0;
+  if (connectionLost) setConnectionLost(false);
+}
+
+function setConnectionLost(lost) {
+  connectionLost = lost;
+  document.body.classList.toggle('disconnected', lost);
+  document.querySelectorAll('[data-page]').forEach((page) => { page.inert = lost; });
+  clearTimeout(reconnectTimer);
+  const banner = $('#conn-banner');
+  if (lost) {
+    // The controller's own time at the last successful poll.
+    const since = clockBase
+      ? ` Last update at ${fmtTime(new Date(clockBase.serverMs + clockBase.offsetMs).toISOString().slice(11, 16))}.`
+      : '';
+    $('#conn-message').textContent = `Can't reach the bell controller. Retrying…${since}`;
+    banner.classList.remove('back');
+    banner.hidden = false;
+    $('#error-banner').hidden = true;
+    $('#indicator-label').textContent = 'Not connected';
+    $('#indicator').classList.add('quiet');
+  } else {
+    $('#conn-message').textContent = 'Reconnected to the bell controller.';
+    banner.classList.add('back');
+    banner.hidden = false;
+    reconnectTimer = setTimeout(() => { banner.hidden = true; }, 3000);
+    Object.keys(rendered).forEach((key) => { rendered[key] = null; });  // redraw everything
+    render();
+  }
 }
 
 // Controller wall-clock time, as a Date whose UTC fields hold the controller's local fields.
@@ -609,7 +681,7 @@ function render() {
 
 // Everything that changes with the clock; runs every second.
 function renderTick() {
-  if (!clockBase) return;
+  if (!clockBase || connectionLost) return;  // freeze, rather than show times that may be wrong
   const now = controllerNow();
   $('#clock').textContent = fmtTime(now.toISOString().slice(11, 19));
   renderIndicator();
@@ -1178,10 +1250,10 @@ document.querySelectorAll('input[name=time-format]').forEach((radio) => {
 window.addEventListener('hashchange', showTab);
 
 showTab();
-run(async () => { await refresh(); if (currentTab === 'log') await loadLog(); });
-setInterval(() => { if (!document.hidden) run(refresh); }, 2000);
+poll().then(() => { if (state && currentTab === 'log') run(loadLog); });
+setInterval(() => { if (!document.hidden) poll(); }, 2000);
 setInterval(() => { if (state) renderTick(); }, 1000);
-setInterval(() => { if (currentTab === 'log' && !document.hidden) run(loadLog); }, 5000);
+setInterval(() => { if (currentTab === 'log' && !document.hidden && !connectionLost) loadLog().catch(() => {}); }, 5000);
 </script>
 </body>
 </html>
