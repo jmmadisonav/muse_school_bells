@@ -7,6 +7,7 @@ import pytest
 import bells
 import touchpoints
 from audio import AudioError
+import history
 from helpers import FakeExport, FakePlayer, make_wav
 
 NOW = datetime(2026, 10, 12, 10, 52, 7)  # Monday
@@ -138,3 +139,19 @@ def test_set_held_holds_today_and_publishes(tp):
     assert 'held' in tp.tp.values()['last_error']
     tp.h['set_held'](False)
     assert tp.store.get()['held_on'] is None
+
+
+def test_touch_point_plays_are_logged(tmp_path, log):
+    sounds_dir = tmp_path / 'sounds'
+    sounds_dir.mkdir()
+    (sounds_dir / 'recess.wav').write_bytes(make_wav(0.1))
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    h = history.History(str(tmp_path / 'history.jsonl'), log, clock=lambda: NOW)
+    player = FakePlayer()
+    handlers = touchpoints.TouchPoints(FakeExport(), store, player, str(sounds_dir), log,
+                                       clock=lambda: NOW, history=h).handlers()
+    handlers['play_sound']('recess.wav')
+    player.fail = AudioError('The USB audio adapter is not connected')
+    handlers['play_sound']('recess.wav')
+    assert [(e['source'], e['result']) for e in h.entries()] == [('touch_point', 'failed'),
+                                                                ('touch_point', 'played')]

@@ -5,6 +5,7 @@ import pytest
 import bells
 import scheduler
 from audio import AudioError
+import history
 from helpers import FakePlayer
 
 WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri']
@@ -123,3 +124,33 @@ def test_hold_blocks_todays_bells_only(env):
     assert player.plays == []
     sched.tick(at(13, 11, 0))
     assert len(player.plays) == 1
+
+
+def test_history_records_played_failed_and_skipped(env, log, tmp_path):
+    _, store, player, sounds_dir = env
+    h = history.History(str(tmp_path / 'history.jsonl'), log, clock=lambda: at(12, 11, 0))
+    sched = scheduler.Scheduler(store, player, str(sounds_dir), log, history=h)
+    sched.tick(at(12, 11, 0))
+    player.fail = AudioError('The USB audio adapter is not connected')
+    sched.tick(at(13, 11, 0))
+    player.fail = None
+    (sounds_dir / 'recess.wav').unlink()
+    sched.tick(at(14, 11, 0))
+    [b] = store.get()['bells']
+    store.set_bells([dict(b, skip_on='2026-10-15')])
+    sched.tick(at(15, 11, 0, 0))
+    sched.tick(at(15, 11, 0, 30))
+    results = [(e['source'], e['result']) for e in reversed(h.entries())]
+    assert results == [('scheduled', 'played'), ('scheduled', 'failed'), ('scheduled', 'failed'),
+                       ('scheduled', 'skipped')]
+    assert h.entries()[-1]['label'] == 'Recess'
+    assert 'not connected' in h.entries()[-2]['error']
+
+
+def test_disabled_bell_neither_rings_nor_logs(env, log, tmp_path):
+    _, store, player, sounds_dir = env
+    [b] = store.get()['bells']
+    store.set_bells([dict(b, enabled=False)])
+    h = history.History(str(tmp_path / 'history.jsonl'), log, clock=lambda: at(12, 11, 0))
+    scheduler.Scheduler(store, player, str(sounds_dir), log, history=h).tick(at(12, 11, 0))
+    assert player.plays == [] and h.entries() == []

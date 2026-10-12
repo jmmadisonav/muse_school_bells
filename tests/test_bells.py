@@ -118,7 +118,8 @@ def test_load_corrupt_file_keeps_bad_copy(tmp_path, log):
 
 def test_store_set_settings_merges_partial_update(tmp_path, log):
     store = bells.Store(str(tmp_path / 'bells.json'), log)
-    assert store.set_settings({'master_volume': 50}) == {'enabled': True, 'master_volume': 50}
+    assert store.set_settings({'master_volume': 50}) == {'enabled': True, 'master_volume': 50,
+                                                         'time_format': '24h'}
     assert json.loads((tmp_path / 'bells.json').read_text())['master_volume'] == 50
     with pytest.raises(ValidationError):
         store.set_settings({'enabled': 'yes'})
@@ -170,3 +171,65 @@ def test_load_ignores_unreadable_held_on(tmp_path, log):
     path.write_text(json.dumps(dict(bells.default_state(), held_on='someday')))
     assert bells.load_state(str(path), log)['held_on'] is None
     assert not log.errors
+
+
+def test_time_format_defaults_validates_and_merges(tmp_path, log):
+    assert bells.default_state()['time_format'] == '24h'
+    assert bells.validate_settings({'enabled': True, 'master_volume': 80})['time_format'] == '24h'
+    with pytest.raises(ValidationError):
+        bells.validate_settings({'enabled': True, 'master_volume': 80, 'time_format': '12'})
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    assert store.set_settings({'time_format': '12h'})['time_format'] == '12h'
+    assert store.get()['master_volume'] == 80
+    assert bells.Store(str(tmp_path / 'bells.json'), log).get()['time_format'] == '12h'
+
+
+def test_bells_get_enabled_and_skip_on_defaults_and_validation():
+    [b] = bells.validate_bells([bell()])
+    assert b['enabled'] is True and b['skip_on'] is None
+    [b] = bells.validate_bells([bell(enabled=False, skip_on='2026-10-13')])
+    assert b['enabled'] is False and b['skip_on'] == '2026-10-13'
+    for field, value in (('enabled', 'no'), ('skip_on', 'someday'), ('skip_on', 5)):
+        with pytest.raises(ValidationError):
+            bells.validate_bells([bell(**{field: value})])
+
+
+def test_disabled_bell_does_not_ring_or_count_as_next():
+    state = state_with(bell(id='off', enabled=False), bell(id='on', label='Lunch', time='13:00'))
+    assert bells.due_bells(state, MON_1100, set()) == []
+    assert bells.next_bell(state, datetime(2026, 10, 12, 10, 52))['id'] == 'on'
+    assert bells.ring_target(state, datetime(2026, 10, 12, 10, 52))['id'] == 'on'
+
+
+def test_skip_on_blocks_only_that_date():
+    state = state_with(bell(id='r1', skip_on='2026-10-12'))
+    assert bells.due_bells(state, MON_1100, set()) == []
+    assert bells.skipped_bells(state, MON_1100, set())[0]['id'] == 'r1'
+    assert bells.due_bells(state, datetime(2026, 10, 13, 11, 0), set())
+    assert bells.skipped_bells(state, datetime(2026, 10, 13, 11, 0), set()) == []
+    assert bells.next_bell(state, datetime(2026, 10, 12, 10, 52))['date'] == '2026-10-13'
+    assert bells.ring_target(state, datetime(2026, 10, 12, 10, 52))['date'] == '2026-10-13'
+
+
+def test_skipped_bells_ignores_disabled_held_and_rung():
+    state = state_with(bell(id='r1', skip_on='2026-10-12'))
+    assert bells.skipped_bells(state, MON_1100, {('r1', '2026-10-12')}) == []
+    assert bells.skipped_bells(dict(state, held_on='2026-10-12'), MON_1100, set()) == []
+    assert bells.skipped_bells(dict(state, enabled=False), MON_1100, set()) == []
+
+
+def test_next_occurrence():
+    b = bells.validate_bells([bell(days=['mon', 'wed'])])[0]
+    assert bells.next_occurrence(b, datetime(2026, 10, 12, 10, 52)) == '2026-10-12'
+    assert bells.next_occurrence(b, datetime(2026, 10, 12, 11, 0)) == '2026-10-14'
+    assert bells.next_occurrence(b, datetime(2026, 10, 14, 12, 0)) == '2026-10-19'
+
+
+def test_store_set_skip(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    store.set_bells([bell(id='r1')])
+    assert store.set_skip('r1', True, datetime(2026, 10, 12, 11, 30))['skip_on'] == '2026-10-13'
+    assert bells.Store(str(tmp_path / 'bells.json'), log).get()['bells'][0]['skip_on'] == '2026-10-13'
+    assert store.set_skip('r1', False, datetime(2026, 10, 12, 11, 30))['skip_on'] is None
+    with pytest.raises(KeyError):
+        store.set_skip('nope', True, MON_1100)

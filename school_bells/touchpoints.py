@@ -61,13 +61,14 @@ def describe_next(next_bell):
 
 
 class TouchPoints:
-    def __init__(self, export, store, player, sounds_dir, log, clock=datetime.now):
+    def __init__(self, export, store, player, sounds_dir, log, clock=datetime.now, history=None):
         self._export = export
         self._store = store
         self._player = player
         self._sounds_dir = sounds_dir
         self._log = log
         self._clock = clock
+        self._history = history
         self._last_error = ''
         self._published = {}
         self._lock = threading.Lock()
@@ -110,7 +111,14 @@ class TouchPoints:
         if not sounds.sound_exists(self._sounds_dir, name):
             raise bells.ValidationError('sound %s does not exist' % name)
         gain = self._store.get()['master_volume'] / 100
-        self._player.play(os.path.join(self._sounds_dir, name), gain)
+        try:
+            self._player.play(os.path.join(self._sounds_dir, name), gain)
+        except Exception as e:
+            if self._history is not None:
+                self._history.record('touch_point', name, 'failed', error=str(e))
+            raise
+        if self._history is not None:
+            self._history.record('touch_point', name)
 
     def error(self, message):
         """Log message and publish it as last_error."""

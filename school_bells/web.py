@@ -16,7 +16,7 @@ FONT_RE = re.compile(r'^[A-Za-z0-9-]+\.woff2$')
 
 
 def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime.now, host='',
-                adapter_connected=audio.adapter_connected, test_tone_path=None):
+                adapter_connected=audio.adapter_connected, test_tone_path=None, history=None):
     """Return a server for the bell page and API. Call serve_forever() on it."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -72,6 +72,10 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                     return self._upload(query)
                 if method == 'DELETE' and path.startswith('/api/sounds/'):
                     return self._delete_sound(unquote(path[len('/api/sounds/'):]))
+                if method == 'GET' and path == '/api/history':
+                    return self._send_json(200, {'entries': history.entries() if history else []})
+                if method == 'POST' and path.startswith('/api/bells/') and path.endswith('/skip'):
+                    return self._skip(unquote(path[len('/api/bells/'):-len('/skip')]))
                 if method == 'POST' and path == '/api/play':
                     return self._play()
                 if method == 'POST' and path == '/api/ring':
@@ -169,6 +173,7 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                 'weekday': bells.DAYS[now.weekday()],
                 'enabled': state['enabled'],
                 'master_volume': state['master_volume'],
+                'time_format': state['time_format'],
                 'held': bells.is_held(state, now),
                 'bells': [dict(b, missing_sound=not sounds.sound_exists(sounds_dir, b['sound']))
                           for b in state['bells']],
@@ -193,7 +198,30 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                 store.set_held(body['held'], clock().date())
             state = store.get()
             self._send_json(200, {'enabled': state['enabled'], 'master_volume': state['master_volume'],
-                                  'held': bells.is_held(state, clock())})
+                                  'held': bells.is_held(state, clock()),
+                                  'time_format': state['time_format']})
+
+        def _skip(self, bell_id):
+            body = self._read_json()
+            if not isinstance(body, dict):
+                raise bells.ValidationError('Body must be {"skip": true or false}')
+            try:
+                bell = store.set_skip(bell_id, body.get('skip'), clock())
+            except KeyError:
+                return self._error(404, 'No bell with id %s' % bell_id)
+            self._send_json(200, bell)
+
+        def _play_logged(self, source, path, gain, sound, label=''):
+            """Play and record the attempt in the bell log, then report what's playing."""
+            try:
+                player.play(path, gain)
+            except Exception as e:
+                if history is not None:
+                    history.record(source, sound, 'failed', label=label, error=str(e))
+                raise
+            if history is not None:
+                history.record(source, sound, label=label)
+            self._send_json(200, {'playing': sound})
 
         def _ring(self):
             state = store.get()
@@ -204,14 +232,14 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             if not sounds.sound_exists(sounds_dir, bell['sound']):
                 return self._error(404, 'Sound %s does not exist' % bell['sound'])
             gain = state['master_volume'] / 100 * bell['volume'] / 100
-            player.play(os.path.join(sounds_dir, bell['sound']), gain)
-            self._send_json(200, {'playing': bell['sound']})
+            self._play_logged('ring_now', os.path.join(sounds_dir, bell['sound']), gain, bell['sound'],
+                              label=bell['label'] or bell['time'])
 
         def _test_tone(self):
             if not test_tone_path or not os.path.isfile(test_tone_path):
                 return self._error(404, 'The test tone is not available')
-            player.play(test_tone_path, store.get()['master_volume'] / 100)
-            self._send_json(200, {'playing': os.path.basename(test_tone_path)})
+            self._play_logged('test_tone', test_tone_path, store.get()['master_volume'] / 100,
+                              os.path.basename(test_tone_path))
 
         def _put_bells(self):
             body = self._read_json()
@@ -258,7 +286,6 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                 return self._error(404, 'Sound %s does not exist' % name)
             volume = bells.check_volume(body.get('volume', 100), 'Volume')
             gain = store.get()['master_volume'] / 100 * volume / 100
-            player.play(os.path.join(sounds_dir, name), gain)
-            self._send_json(200, {'playing': name})
+            self._play_logged('page', os.path.join(sounds_dir, name), gain, name)
 
     return ThreadingHTTPServer((host, port), Handler)

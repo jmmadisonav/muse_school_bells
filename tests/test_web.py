@@ -10,6 +10,7 @@ import pytest
 import bells
 import web
 from audio import AudioError
+import history
 from helpers import FakePlayer, make_wav
 
 NOW = datetime(2026, 10, 12, 10, 52, 7)  # Monday
@@ -27,13 +28,15 @@ def app(tmp_path, log):
     store = bells.Store(str(tmp_path / 'bells.json'), log)
     player = FakePlayer()
     test_tone = tmp_path / 'test-tone.wav'
+    bell_log = history.History(str(tmp_path / 'history.jsonl'), log, clock=lambda: NOW)
     server = web.make_server(0, store, player, str(sounds_dir), str(static_dir), log,
                              clock=lambda: NOW, host='127.0.0.1',
-                             adapter_connected=lambda: True, test_tone_path=str(test_tone))
+                             adapter_connected=lambda: True, test_tone_path=str(test_tone),
+                             history=bell_log)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield types.SimpleNamespace(port=server.server_address[1], store=store, player=player,
                                 sounds_dir=sounds_dir, static_dir=static_dir,
-                                test_tone=test_tone)
+                                test_tone=test_tone, history=bell_log)
     server.shutdown()
     server.server_close()
 
@@ -94,7 +97,7 @@ def test_put_bells_validates_and_saves(app):
 
 def test_put_settings_partial(app):
     assert call(app, 'PUT', '/api/settings', {'master_volume': 30}) == (
-        200, {'enabled': True, 'master_volume': 30, 'held': False})
+        200, {'enabled': True, 'master_volume': 30, 'held': False, 'time_format': '24h'})
     assert call(app, 'PUT', '/api/settings', {'master_volume': 300})[0] == 400
 
 
@@ -179,7 +182,7 @@ def test_state_reports_hold_ring_target_and_adapter(app):
     assert state['ring_target']['label'] == 'Recess'
     assert state['adapter'] == {'connected': True, 'last_playback': None}
     assert call(app, 'PUT', '/api/settings', {'held': True}) == (
-        200, {'enabled': True, 'master_volume': 80, 'held': True})
+        200, {'enabled': True, 'master_volume': 80, 'held': True, 'time_format': '24h'})
     state = call(app, 'GET', '/api/state')[1]
     assert state['held'] is True
     assert state['next_bell']['date'] == '2026-10-13'
@@ -243,3 +246,37 @@ def test_successful_gets_are_not_logged_but_changes_and_errors_are(app, log):
     assert not [line for line in log.infos if 'GET /api/state' in line]
     assert [line for line in log.infos if 'PUT /api/settings' in line]
     assert [line for line in log.infos if 'GET /api/nope' in line]
+
+
+def test_time_format_setting(app):
+    assert call(app, 'PUT', '/api/settings', {'time_format': '12h'})[1]['time_format'] == '12h'
+    assert call(app, 'GET', '/api/state')[1]['time_format'] == '12h'
+    assert call(app, 'PUT', '/api/settings', {'time_format': 'am/pm'})[0] == 400
+
+
+def test_plays_are_logged_with_their_source(app):
+    upload(app, 'recess.wav', make_wav(0.1))
+    app.store.set_bells([RECESS])
+    app.test_tone.write_bytes(make_wav(0.1))
+    call(app, 'POST', '/api/play', {'sound': 'recess.wav'})
+    call(app, 'POST', '/api/ring', {})
+    call(app, 'POST', '/api/test-tone', {})
+    app.player.fail = AudioError('The USB audio adapter is not connected')
+    call(app, 'POST', '/api/play', {'sound': 'recess.wav'})
+    status, body = call(app, 'GET', '/api/history')
+    assert status == 200
+    assert [(e['source'], e['result'], e['label']) for e in body['entries']] == [
+        ('page', 'failed', ''), ('test_tone', 'played', ''), ('ring_now', 'played', 'Recess'),
+        ('page', 'played', '')]
+    assert 'not connected' in body['entries'][0]['error']
+
+
+def test_skip_endpoint(app):
+    upload(app, 'recess.wav', make_wav(0.1))
+    app.store.set_bells([dict(RECESS, id='r1')])
+    status, body = call(app, 'POST', '/api/bells/r1/skip', {'skip': True})
+    assert status == 200 and body['skip_on'] == '2026-10-12'
+    assert call(app, 'GET', '/api/state')[1]['next_bell']['date'] == '2026-10-13'
+    assert call(app, 'POST', '/api/bells/r1/skip', {'skip': False})[1]['skip_on'] is None
+    assert call(app, 'POST', '/api/bells/nope/skip', {'skip': True})[0] == 404
+    assert call(app, 'POST', '/api/bells/r1/skip', {'skip': 'yes'})[0] == 400

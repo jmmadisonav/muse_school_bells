@@ -18,7 +18,7 @@ class ValidationError(ValueError):
 
 
 def default_state():
-    return {'enabled': True, 'master_volume': 80, 'held_on': None, 'bells': []}
+    return {'enabled': True, 'master_volume': 80, 'time_format': '24h', 'held_on': None, 'bells': []}
 
 
 def check_volume(value, what):
@@ -32,8 +32,12 @@ def validate_settings(data):
         raise ValidationError('Settings must be a JSON object')
     if not isinstance(data.get('enabled'), bool):
         raise ValidationError('enabled must be true or false')
+    time_format = data.get('time_format', '24h')
+    if time_format not in ('12h', '24h'):
+        raise ValidationError('time_format must be "12h" or "24h"')
     return {'enabled': data['enabled'],
-            'master_volume': check_volume(data.get('master_volume'), 'Master volume')}
+            'master_volume': check_volume(data.get('master_volume'), 'Master volume'),
+            'time_format': time_format}
 
 
 def _new_id(taken):
@@ -72,6 +76,12 @@ def validate_bells(bells, sound_exists=None):
         if sound_exists is not None and not sound_exists(sound):
             raise ValidationError('Bell "%s": sound %s does not exist' % (name, sound))
         volume = check_volume(raw.get('volume'), 'Bell "%s" volume' % name)
+        enabled = raw.get('enabled', True)
+        if not isinstance(enabled, bool):
+            raise ValidationError('Bell "%s": enabled must be true or false' % name)
+        skip_on = raw.get('skip_on')
+        if skip_on is not None and not _is_iso_date(skip_on):
+            raise ValidationError('Bell "%s": skip_on must be a date' % name)
         bell_id = raw.get('id')
         if not isinstance(bell_id, str) or not ID_RE.match(bell_id) or bell_id in ids:
             bell_id = _new_id(ids)
@@ -83,7 +93,7 @@ def validate_bells(bells, sound_exists=None):
                                       % (other, name, time, day.capitalize()))
             slots[(time, day)] = name
         result.append({'id': bell_id, 'label': label, 'time': time, 'days': days,
-                       'sound': sound, 'volume': volume})
+                       'sound': sound, 'volume': volume, 'enabled': enabled, 'skip_on': skip_on})
     result.sort(key=lambda b: (b['time'], b['label']))
     return result
 
@@ -139,7 +149,30 @@ def due_bells(state, now, rung):
     hhmm = now.strftime('%H:%M')
     date = now.date().isoformat()
     return [b for b in state['bells']
-            if b['time'] == hhmm and day in b['days'] and (b['id'], date) not in rung]
+            if b['time'] == hhmm and day in b['days'] and (b['id'], date) not in rung
+            and b.get('enabled', True) and b.get('skip_on') != date]
+
+
+def skipped_bells(state, now, rung):
+    """Return the enabled bells whose ring at now's minute is skipped and not yet recorded."""
+    if not state['enabled'] or is_held(state, now):
+        return []
+    day = DAYS[now.weekday()]
+    hhmm = now.strftime('%H:%M')
+    date = now.date().isoformat()
+    return [b for b in state['bells']
+            if b['time'] == hhmm and day in b['days'] and (b['id'], date) not in rung
+            and b.get('enabled', True) and b.get('skip_on') == date]
+
+
+def next_occurrence(bell, now):
+    """Return the ISO date of the bell's next ring after now's minute, ignoring any skip."""
+    current = now.strftime('%H:%M')
+    for offset in range(8):
+        day = (now + timedelta(days=offset)).date()
+        if DAYS[day.weekday()] in bell['days'] and (offset > 0 or bell['time'] > current):
+            return day.isoformat()
+    return None
 
 
 def next_bell(state, now):
@@ -153,7 +186,8 @@ def next_bell(state, now):
         date = (now + timedelta(days=offset)).date()
         day = DAYS[date.weekday()]
         options = [b for b in state['bells']
-                   if day in b['days'] and (offset > 0 or b['time'] > current)]
+                   if day in b['days'] and (offset > 0 or b['time'] > current)
+                   and b.get('enabled', True) and b.get('skip_on') != date.isoformat()]
         if options:
             b = min(options, key=lambda b: b['time'])
             return {'id': b['id'], 'label': b['label'], 'time': b['time'], 'date': date.isoformat()}
@@ -189,8 +223,9 @@ class Store:
         if not isinstance(data, dict):
             raise ValidationError('Settings must be a JSON object')
         with self._lock:
-            merged = {'enabled': self._state['enabled'], 'master_volume': self._state['master_volume']}
-            merged.update({k: data[k] for k in ('enabled', 'master_volume') if k in data})
+            keys = ('enabled', 'master_volume', 'time_format')
+            merged = {k: self._state[k] for k in keys}
+            merged.update({k: data[k] for k in keys if k in data})
             clean = validate_settings(merged)
             new = dict(self._state, **clean)
             save_state(self._path, new)
@@ -206,6 +241,21 @@ class Store:
             save_state(self._path, new)
             self._state = new
         return held
+
+    def set_skip(self, bell_id, skip, now):
+        """Skip the bell's next ring after now, or clear the skip. Raises KeyError for an unknown id."""
+        if not isinstance(skip, bool):
+            raise ValidationError('skip must be true or false')
+        with self._lock:
+            updated = copy.deepcopy(self._state['bells'])
+            bell = next((b for b in updated if b['id'] == bell_id), None)
+            if bell is None:
+                raise KeyError(bell_id)
+            bell['skip_on'] = next_occurrence(bell, now) if skip else None
+            new = dict(self._state, bells=updated)
+            save_state(self._path, new)
+            self._state = new
+            return copy.deepcopy(bell)
 
     def bells_using(self, sound):
         with self._lock:

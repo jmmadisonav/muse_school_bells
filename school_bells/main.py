@@ -9,6 +9,7 @@ sys.path.insert(0, HERE)
 
 import audio  # noqa: E402
 import bells  # noqa: E402
+import history  # noqa: E402
 import scheduler  # noqa: E402
 import sounds  # noqa: E402
 import touchpoints  # noqa: E402
@@ -27,11 +28,12 @@ if not os.path.exists(TEST_TONE):
 
 store = bells.Store(os.path.join(DATA_DIR, 'bells.json'), log)
 player = audio.Player(log)
-touch = touchpoints.TouchPoints(context.export, store, player, SOUNDS_DIR, log)
+bell_log = history.History(os.path.join(DATA_DIR, 'history.jsonl'), log)
+touch = touchpoints.TouchPoints(context.export, store, player, SOUNDS_DIR, log, history=bell_log)
 globals().update(touch.handlers())  # MUSE finds program.json's setters and methods here
-scheduler.Scheduler(store, player, SOUNDS_DIR, log, events=touch).start()
+scheduler.Scheduler(store, player, SOUNDS_DIR, log, events=touch, history=bell_log).start()
 server = web.make_server(PORT, store, player, SOUNDS_DIR, os.path.join(HERE, 'static'), log,
-                         test_tone_path=TEST_TONE)
+                         test_tone_path=TEST_TONE, history=bell_log)
 threading.Thread(target=server.serve_forever, daemon=True, name='bell-web').start()
 touch.start()
 log.info('School bells running on port %d, data in %s' % (PORT, DATA_DIR))
