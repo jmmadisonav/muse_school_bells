@@ -141,7 +141,7 @@ bells = context.devices.get('school_bells')
 
 print(bells.next_bell.value)            # for example: Mon 13:45 Period 5
 bells.held.value = True                 # hold today's bells
-bells.play('evacuation.wav')            # play a stored sound
+bells.play('recess.wav')                # play a stored sound
 bells.listen('bell_rang', lambda event: print(event.arguments))
 ```
 
