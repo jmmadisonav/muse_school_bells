@@ -54,3 +54,26 @@ def make_wav(seconds=1.0, rate=48000, channels=2, width=2, tone_hz=440):
         else:
             w.writeframes(bytes([128]) * frames * channels * width)
     return buffer.getvalue()
+
+
+class FakeExport:
+    """Stands in for context.export and records what it sends to MUSE."""
+
+    def __init__(self):
+        self.updates = []
+        self.dispatches = []
+        self.calls = []
+
+    def update(self, path, value, normalized=None):
+        self.updates.append((path, value))
+        self.calls.append('update')
+
+    def dispatch(self, path, args=None):
+        self.dispatches.append((path, args))
+        self.calls.append('dispatch')
+
+    def online(self):
+        self.calls.append('online')
+
+    def offline(self):
+        self.calls.append('offline')
