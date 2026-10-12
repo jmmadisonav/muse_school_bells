@@ -2761,3 +2761,90 @@ Load the program and work through the spec's controller checks:
 git add school_bells/static/index.html tools/dev_server.py design
 git commit -m "Add the bell page"
 ```
+
+---
+
+### Task 10: Backend for the design: hold, Ring now, test tone, adapter status, fonts
+
+Added 2026-10-12 after the Claude Design handoff (spec sections Data, Scheduling rules, Web API, Touch points, and Page). Written at interface and test level, because it was designed and built in the same session; the code is in the task's commits.
+
+**Files:** `school_bells/{bells,sounds,audio,scheduler,web,touchpoints,main}.py`, `school_bells/program.json`, `school_bells/static/fonts/*.woff2` (copied from `design/`), `tools/dev_server.py`, `tools/tp_check/main.py`, and `tests/{helpers,test_bells,test_sounds,test_audio,test_scheduler,test_web,test_touchpoints}.py`.
+
+**Interfaces produced:**
+- `bells`:
+  - `default_state()` gains `held_on: None`.
+  - `is_held(state, now) -> bool` and `ring_target(state, now)`. `ring_target` is `next_bell` with the master switch and hold ignored.
+  - `due_bells` returns `[]` while held, and `next_bell` skips the held day.
+  - `load_state` keeps a valid ISO `held_on`, or loads `None`.
+  - `Store.set_held(held: bool, today: date)`.
+- `sounds.make_tone_wav(hz=1000, seconds=3, level=0.25) -> bytes`, as 48 kHz 16-bit stereo with 10 ms fades.
+- `audio`:
+  - `adapter_connected(devices_dir='/sys/bus/usb/devices') -> bool`.
+  - `Player.last_playback`, set to `{'time': ISO seconds, 'failed_transfers': int}` after each completed stream, or `None`.
+- `web.make_server(..., adapter_connected=audio.adapter_connected, test_tone_path=None)` adds:
+  - `GET /static/fonts/<name>.woff2`, for names made of letters, digits, and `-`.
+  - `POST /api/ring` and `POST /api/test-tone`.
+  - `held`, `ring_target`, and `adapter` in the state.
+  - `held` in `PUT /api/settings`, which now returns `held` too.
+- `TouchPoints` gains the `held` param and the `set_held(value)` handler.
+- `program.json` declares `held`.
+- `main.py` writes `<data>/test-tone.wav` once and passes it to the web server.
+
+**Tests (written first, watched fail):**
+- `test_bells`:
+  - `test_hold_stops_due_bells_on_its_date_only`
+  - `test_next_bell_skips_held_day_and_ring_target_ignores_hold_and_switch`
+  - `test_store_set_held_persists_and_validates`
+  - `test_load_ignores_unreadable_held_on`
+- `test_sounds`: `test_make_tone_wav_is_three_seconds_at_quarter_level`
+- `test_audio`:
+  - `test_adapter_connected_reads_sysfs`
+  - `test_player_records_last_playback_and_clears_playing`
+  - `test_player_raises_audio_error_for_unreadable_file`
+- `test_scheduler`: `test_hold_blocks_todays_bells_only`
+- `test_web`:
+  - `test_fonts_are_served_from_allow_list`
+  - `test_state_reports_hold_ring_target_and_adapter`
+  - `test_ring_now_plays_ring_target_at_its_volume`
+  - `test_test_tone_plays_at_master_volume`
+- `test_touchpoints`: `test_set_held_holds_today_and_publishes`
+- Existing tests updated for the new `held` key:
+  - `test_put_settings_partial`
+  - `test_handler_arities_match_muse_dispatch`
+  - `test_publish_sends_everything_once_then_only_changes`
+  - `test_start_publishes_then_goes_online`
+
+**Verification:**
+- `.venv\Scripts\python -m pytest -q` passes.
+- The `mojo` stand-in smoke test from Task 8 still resolves every handler in `program.json`, including `set_held`.
+
+---
+
+### Task 11: The bell page rebuilt to the design
+
+Replaces Task 9 Step 4 (restyle) and carries Task 9 Steps 5 and 6.
+
+**Files:** `school_bells/static/index.html`.
+
+**Requirements:**
+- The spec's Page section, in full.
+- Task 9's DOM contract no longer binds. The page is rebuilt to the design.
+- It keeps every behavior from Task 9's script:
+  - API client and error banner
+  - Bell editor and clash and delete-in-use messages
+  - Upload conversion (`convertToWav`, `encodeWav`, `soundName`)
+  - Overwrite confirmation
+  - 2-second polling and the 1-second clock based on the controller's offset
+
+**Verification (on the PC):**
+- `node --check` on the extracted script.
+- The dev server, seeded through the API.
+- Headless Edge screenshots of all three tabs at 1280 px, and at 375 px in an iframe, compared against the design's layout and tokens.
+- A check that the page loads nothing from the network except `/api/*` and `/static/fonts/*`. Run:
+
+  ```powershell
+  Select-String -Path school_bells/static/index.html -Pattern 'https?://|<link|@import'
+  ```
+
+  Expected: no matches.
+- The user then runs the spec's controller checklist.

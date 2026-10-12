@@ -44,6 +44,10 @@ Probes on 2026-10-12 established these facts about the controller:
 | Playback controls | Play any sound now, stop, per-bell volume, and master volume. |
 | Program folder | The deployable program lives in `school_bells/`, named for its program ID. Loading a program uploads its whole folder, so tests, docs, and tools stay outside it. |
 | Other MUSE programs | Other programs control and watch the bells through touch points declared in `program.json`. See [Touch points](#touch-points). |
+| Page design | Today tab built from the Claude Design handoff; Schedules and Device tabs in the same MGE style. See [Page](#page). |
+| Ring now | Plays the next scheduled bell's sound at its volume. |
+| Hold | Hold pauses scheduled bells until midnight; the separate on/off switch stays for holidays. |
+| Font | Hurme Geometric Sans 1, served from the controller. |
 
 ## Phase 0: controller environment probe
 
@@ -116,6 +120,7 @@ the `.metadata` form of `program.json`, and `envvars` haven't been tested in it.
 {
   "enabled": true,
   "master_volume": 80,
+  "held_on": null,
   "bells": [
     {"id": "b1", "label": "Start of day", "time": "08:45",
      "days": ["mon", "tue", "wed", "thu", "fri"], "sound": "start.wav", "volume": 100}
@@ -127,6 +132,9 @@ the `.metadata` form of `program.json`, and `envvars` haven't been tested in it.
 - `time`: 24-hour `HH:MM`.
 - `days`: any of `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`.
 - `volume` and `master_volume`: integers from 0 to 100.
+- `held_on`: the ISO date that a hold applies to, or `null`. A hold applies
+  only on that date, so it clears itself at midnight. An unreadable value loads
+  as `null`.
 - Saves write to `bells.json.tmp` and then rename it over `bells.json`, so a
   power cut can't leave a half-written file.
 - If `bells.json` is missing, the program starts with an empty, enabled
@@ -150,6 +158,12 @@ Sounds are stored in `<data>/sounds/<name>.wav`.
   second time.
 - When the master switch is off, the scheduler rings nothing. Manual play still
   works.
+- While bells are held (`held_on` is today), the scheduler rings nothing, and
+  the next bell skips to the first bell after today. Ring now, manual play, and
+  the test tone still work.
+- Ring now plays the next bell after the current minute, ignoring the master
+  switch and any hold, at that bell's volume. When no bell is scheduled at all,
+  there's nothing to ring.
 - The API rejects a bell list where two bells share a time and a weekday, so
   no two scheduled bells can clash.
 - If a due bell's sound file is missing, the scheduler logs an error and skips
@@ -165,9 +179,12 @@ All bodies are JSON unless stated otherwise. Errors return a 4xx status with
 | Method and path | Purpose |
 |---|---|
 | `GET /` | Serves `static/index.html`. |
-| `GET /api/state` | Returns the controller time (ISO with offset) and weekday, `enabled`, `master_volume`, `bells` (each with `missing_sound: bool`), `sounds` (name and duration in seconds), `playing` (sound name or `null`), and `next_bell` (id and time, or `null`). |
+| `GET /static/fonts/<name>` | Serves a `.woff2` font file from `static/fonts/`. Only file names made of letters, digits, and `-` are served. |
+| `GET /api/state` | Returns the controller time (ISO with offset) and weekday, `enabled`, `master_volume`, `held`, `bells` (each with `missing_sound: bool`), `sounds` (name and duration in seconds), `playing` (sound name or `null`), `next_bell` (id, label, time, and date, or `null`), `ring_target` (the bell Ring now would play, in the same form, or `null`), and `adapter` (`connected: bool`, and `last_playback`: `{"time", "failed_transfers"}` or `null`). |
 | `PUT /api/bells` | Replaces the whole bell list. Assigns ids to new bells. Validates time format, days, volume, that each sound exists, and that no bells clash. |
-| `PUT /api/settings` | Sets `enabled` and `master_volume`. |
+| `PUT /api/settings` | Sets any of `enabled`, `master_volume`, and `held` (boolean). Returns all three. |
+| `POST /api/ring` | Plays the ring target's sound at its volume. Returns 409 when there's nothing to ring. |
+| `POST /api/test-tone` | Plays the built-in test tone (1000 Hz, 3 s, level 0.25, about −12 dBFS) at the master volume. The program generates the tone once, as `<data>/test-tone.wav`, outside the sounds folder. |
 | `POST /api/sounds?name=<name>` | The body is WAV bytes. The server rejects files that aren't 48 kHz, 16-bit, 2-channel PCM or that are larger than 50 MB. Names may use letters, digits, spaces, `_`, `-`, and `.`, and must end in `.wav`. An existing name returns 409 unless `overwrite=1` is set. |
 | `DELETE /api/sounds/<name>` | Deletes a sound. Returns 409, naming the bells that use the sound, if any bell uses it. |
 | `POST /api/play` | Body `{"sound": "<name>", "volume": 0-100}`. Volume is optional; without it, playback uses the master volume only. |
@@ -192,6 +209,7 @@ matching the folder name.
 |---|---|---|---|
 | `enabled` | Param, `boolean` | setter `set_enabled` | Turns scheduled bells on or off. |
 | `master_volume` | Param, `integer`, 0 to 100 | setter `set_master_volume` | Sets the overall output level. |
+| `held` | Param, `boolean` | setter `set_held` | Holds scheduled bells for the rest of today, or resumes them. Accepts the same loose values as `enabled`. |
 | `playing` | Param, `string`, read-only | | The sound playing now, or `""`. |
 | `next_bell` | Param, `string`, read-only | | The next bell as `Mon 11:00 Recess`, or `""` when none is due. |
 | `last_error` | Param, `string`, read-only | | The latest error from a scheduled bell or a touch-point command. |
@@ -221,48 +239,110 @@ matching the folder name.
 
 ## Page
 
-The page's visual design comes from the Claude Design project at
-<https://claude.ai/design/p/4dacea54-3051-4d92-908a-8b172fbad2f7>, exported
-into `design/` in this folder. `static/index.html` matches that design and
-stays one self-contained file with no external scripts, fonts, or stylesheets,
-because staff browsers might not have internet access. Where the design and
-this section differ on behavior, this section wins. Where they differ on
-look, the design wins.
+The page's look comes from the Claude Design handoff in
+`design/design_handoff_school_bells/` (its `README.md` and
+`School Bells.dc.html`), which uses the Madison Group Enterprises (MGE) design
+system. That handoff designs only the Today tab, and it was drawn before the
+scheduler existed, so its sample timetables and tone-only playback are
+placeholders. Where the design and this section differ on behavior, this
+section wins. Where they differ on look, the design wins.
 
-The wireframe below sets the content and behavior.
+`static/index.html` is one file. The only other files it loads are the three
+Hurme Geometric Sans 1 weights (400, 600, 700) in `static/fonts/`, served by
+the program. It loads nothing from the internet, because staff browsers might
+not have internet access. The Hurme licence is pageview-capped; the user
+confirmed its use for this internal page.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│ School Bells        Controller time: Mon 10:52:07            │
-│ [■ Bells enabled]   Master volume [━━━━━━━●━━] 80%  [■ Stop] │
-├──────────────────────────────────────────────────────────────┤
-│ Next bell: 11:00  Recess        ▸ in 7 min                   │
-├──────────────────────────────────────────────────────────────┤
-│ BELLS                                          [+ Add bell]  │
-│ 08:45  Start of day   M T W T F   start.wav  100%  [▶] [✎] [✕]│
-│ 11:00  Recess         M T W T F   recess.wav  90%  [▶] [✎] [✕]│
-├──────────────────────────────────────────────────────────────┤
-│ SOUNDS                                    [⇪ Upload sound]   │
-│ start.wav     0:04   [▶ Play]  [✕]                           │
-└──────────────────────────────────────────────────────────────┘
-  This page has no login. Keep it on a restricted network.
-```
+### Layout
 
-- The bell list is sorted by time. A bell with a missing sound is flagged.
-- **▶** on a bell row plays that bell's sound at its own volume.
-- **✎** and **+ Add bell** open an inline editor with a time picker, weekday
-  checkboxes, a sound dropdown, and a volume slider.
-- The master volume and the enabled switch save as soon as you change them.
-- Uploading converts in the browser:
-  1. `AudioContext.decodeAudioData` decodes the file.
-  2. `OfflineAudioContext` at 48000 Hz with 2 channels resamples it.
-  3. The page encodes the result as 16-bit PCM WAV and posts it.
+- **Header**, **nav**, and **footer** follow the design. The nav has three
+  tabs: Today, Schedules, and Device. The URL hash (`#today`, `#schedules`,
+  `#device`) keeps the current tab, and Today is the default.
+- **Header status indicator**, in order of priority:
+  - "Ringing" (red), while a sound plays.
+  - "Bells held" (`#909dab`), while held.
+  - "Adapter not found" (`#909dab`), when the adapter isn't connected.
+  - "Adapter connected" (red), otherwise.
+- **Header clock:** the controller's time, ticking every second.
+- **Footer:** the design's footer, with the line
+  `This page has no login. Keep it on a restricted network.` under the left
+  text.
+- **Error banner:** API errors appear in a banner under the header, with a
+  dismiss button. It has a red left border on white.
 
-  The page shows "Converting…" and then "Uploading…" while this happens. If
-  the browser can't decode a file, the page says so.
-- Errors from the API appear in a banner at the top of the page.
-- The page works at phone width, so staff can use it from a phone on the
-  school network.
+### Today tab (as designed)
+
+- **Hero:**
+  - Eyebrow: "Next bell · {weekday D month}", in `en-AU` form.
+  - The next bell's time and label, from `next_bell`.
+  - A countdown that reads "In 12 min 05 s", or "In 1 h 05 min" when the bell
+    is an hour or more away. When the next bell isn't today, the countdown
+    reads "All bells done for today", and the label gets " tomorrow" or
+    " on {Weekday}" added. When no bell is scheduled at all, the hero shows
+    "No bells scheduled".
+- **Hero buttons:**
+  - **RING NOW** calls `POST /api/ring`. It's disabled when `ring_target` is
+    `null` or a sound is playing.
+  - **HOLD BELLS** or **RESUME BELLS** sets `held`.
+  - The note under the buttons reads "Hold pauses scheduled bells for the rest
+    of today.", or "Scheduled bells are paused until midnight." while held.
+  - The ringing indicator shows while a sound plays: "Ringing · {sound name}".
+- **Today's schedule** lists today's bells in time order, with the header
+  "Weekday timetable · {n} bells".
+  - Rows are marked RUNG (time at or before now), NEXT (the next bell today),
+    or nothing (later today). While held, every un-rung row is tagged HELD.
+  - When the master switch is off, a line under the header reads "Bells are
+    switched off".
+- **Bell tone** panel: the design's key/value grid (Frequency 1000 Hz,
+  Duration 3 s, Level −12 dBFS) and **PLAY TEST TONE**, which calls
+  `POST /api/test-tone`.
+- **Audio adapter** panel: the design's key/value grid. The USB ID, Format, and
+  Endpoint values are fixed text, and Last playback reads
+  "Today HH:MM · N failed transfers", or "None yet". Status reads Connected or
+  Not found.
+
+### Schedules tab (MGE style; not in the design)
+
+- A **Bells** panel holds the full bell list with weekdays, sound, and volume.
+  - Each row has play, edit, and delete buttons. Play uses the bell's volume.
+  - A row whose sound is missing is flagged in red.
+  - **ADD BELL** and edit open an inline editor with a time picker, weekday
+    checkboxes, a sound dropdown, and a volume slider.
+- A **Sounds** panel holds the sound list.
+  - Each sound has a play button, which uses the master volume, and a delete
+    button.
+  - **UPLOAD SOUND** converts the file in the browser:
+    1. `AudioContext.decodeAudioData` decodes the file.
+    2. `OfflineAudioContext` at 48000 Hz with 2 channels resamples it.
+    3. The page encodes the result as 16-bit PCM WAV and posts it.
+
+    The page shows "Converting…" and then "Uploading…", and says so if the
+    browser can't decode the file.
+- A **Bells enabled** switch is for holidays. It saves as soon as you change it.
+
+### Device tab (MGE style; not in the design)
+
+- A **Volume** panel holds the master volume slider, which saves when released,
+  and a **STOP** button.
+- The **Audio adapter** panel appears here too.
+- A **Touch points** panel lists the program's MUSE touch points, so
+  integrators can find them.
+
+### Styling rules from the design system
+
+- **Colors:** red `#e31837` for accents and actions only, `#2e3c49`, `#445c6d`,
+  `#909dab`, `#e4e5e6`, white, and `#fff4f5` for the next-row tint.
+- **Shapes:** 0 radius everywhere. The only shadows are the header shadow and
+  the red glow.
+- **Buttons:** bold, 14px, uppercase, `.06em` letter spacing, left-aligned, and
+  minimum width 200px, with a `›` in the top-right corner. Padding is
+  `22px 46px 20px 26px`, or `18px 40px 16px 22px` for small buttons.
+- **Button variants:** red, outline white, outline dark, and white. Red darkens
+  to `#d01632` on hover, and every transition takes 200ms.
+- **Headings** end in a red full stop. The first panel in each column gets the
+  red-corner mark. The footer has the 20px red bottom border.
+- **Phone width:** the page works with no sideways scrolling. Grids collapse to
+  one column, and the nav scrolls sideways if it must.
 
 ## Error handling
 
@@ -294,6 +374,11 @@ The wireframe below sets the content and behavior.
   7. Reboot and confirm the bells and sounds are still there.
   8. Load the `tools/tp_check/` program and confirm it reads the params, plays
      a sound with the `play` command, and logs `bell_rang` when a bell rings.
+  9. Press Ring now and confirm the next bell's sound plays. Press Play test
+     tone and confirm the 1 kHz tone plays.
+  10. Hold bells, set a bell a minute ahead, and confirm it doesn't ring. Resume
+      and confirm the next one does.
+  11. Unplug the adapter and confirm the header reads "Adapter not found".
 
 ## Out of scope
 
