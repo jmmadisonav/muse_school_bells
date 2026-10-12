@@ -16,6 +16,10 @@
     ".kind": "param", ".type": "integer", ".min": 0, ".max": 100,
     ".metadata": {"setter": "set_master_volume", "desc": "Overall output level, 0 to 100"}
   },
+  "held": {
+    ".kind": "param", ".type": "boolean",
+    ".metadata": {"setter": "set_held", "desc": "Holds scheduled bells for the rest of today"}
+  },
   "playing": {".kind": "param", ".type": "string", ".access": "ro",
               ".metadata": {"desc": "Sound playing now, or empty"}},
   "next_bell": {".kind": "param", ".type": "string", ".access": "ro",

@@ -11,6 +11,7 @@ PROGRAM = os.path.join(ROOT, 'school_bells')
 sys.path.insert(0, PROGRAM)
 
 import bells  # noqa: E402
+import sounds  # noqa: E402
 import web  # noqa: E402
 
 
@@ -24,6 +25,7 @@ class PrintLog:
 
 class PrintPlayer:
     playing = None
+    last_playback = None
 
     def play(self, path, gain):
         print('PLAY %s at gain %.2f' % (path, gain))
@@ -37,8 +39,13 @@ class PrintPlayer:
 data_dir = os.path.join(tempfile.gettempdir(), 'school_bells_dev')
 sounds_dir = os.path.join(data_dir, 'sounds')
 os.makedirs(sounds_dir, exist_ok=True)
+test_tone = os.path.join(data_dir, 'test-tone.wav')
+if not os.path.exists(test_tone):
+    with open(test_tone, 'wb') as f:
+        f.write(sounds.make_tone_wav())
 log = PrintLog()
 store = bells.Store(os.path.join(data_dir, 'bells.json'), log)
-server = web.make_server(8080, store, PrintPlayer(), sounds_dir, os.path.join(PROGRAM, 'static'), log)
+server = web.make_server(8080, store, PrintPlayer(), sounds_dir, os.path.join(PROGRAM, 'static'), log,
+                         adapter_connected=lambda: True, test_tone_path=test_tone)
 print('Open http://localhost:8080/ (data in %s)' % data_dir)
 server.serve_forever()

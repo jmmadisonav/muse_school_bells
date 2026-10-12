@@ -15,7 +15,7 @@ DAY_NAMES = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
 _UNSET = object()
 
 
-def to_bool(value):
+def to_bool(value, name='enabled'):
     """Accept the loose forms MUSE and other programs might send for a boolean."""
     if isinstance(value, bool):
         return value
@@ -23,7 +23,7 @@ def to_bool(value):
         return bool(value)
     if isinstance(value, str) and value.strip().lower() in ('true', 'false', '1', '0'):
         return value.strip().lower() in ('true', '1')
-    raise bells.ValidationError('enabled must be true or false, not %r' % (value,))
+    raise bells.ValidationError('%s must be true or false, not %r' % (name, value))
 
 
 def to_volume(value):
@@ -85,6 +85,10 @@ class TouchPoints:
             self._apply('master_volume',
                         lambda: self._store.set_settings({'master_volume': to_volume(value)}))
 
+        def set_held(value):
+            self._apply('held', lambda: self._store.set_held(to_bool(value, 'held'),
+                                                             self._clock().date()))
+
         def play_sound(args):
             self._apply('play', lambda: self._play(sound_argument(args)))
 
@@ -92,7 +96,7 @@ class TouchPoints:
             self._apply('stop', self._player.stop)
 
         return {'set_enabled': set_enabled, 'set_master_volume': set_master_volume,
-                'play_sound': play_sound, 'stop_sound': stop_sound}
+                'set_held': set_held, 'play_sound': play_sound, 'stop_sound': stop_sound}
 
     def _apply(self, what, action):
         # Handlers never raise into MUSE; failures land in last_error.
@@ -123,6 +127,7 @@ class TouchPoints:
         return {
             'enabled': state['enabled'],
             'master_volume': state['master_volume'],
+            'held': bells.is_held(state, self._clock()),
             'playing': self._player.playing or '',
             'next_bell': describe_next(bells.next_bell(state, self._clock())),
             'last_error': self._last_error,

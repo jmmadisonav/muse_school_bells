@@ -28,12 +28,13 @@ def tp(tmp_path, log):
 
 def test_handler_arities_match_muse_dispatch(tp):
     arity = {name: len(inspect.getfullargspec(f)[0]) for name, f in tp.h.items()}
-    assert arity == {'set_enabled': 1, 'set_master_volume': 1, 'play_sound': 1, 'stop_sound': 0}
+    assert arity == {'set_enabled': 1, 'set_master_volume': 1, 'set_held': 1,
+                     'play_sound': 1, 'stop_sound': 0}
 
 
 def test_publish_sends_everything_once_then_only_changes(tp):
     tp.tp.publish()
-    assert dict(tp.export.updates) == {'enabled': True, 'master_volume': 80, 'playing': '',
+    assert dict(tp.export.updates) == {'enabled': True, 'master_volume': 80, 'held': False, 'playing': '',
                                        'next_bell': 'Mon 11:00 Recess', 'last_error': ''}
     tp.export.updates.clear()
     tp.tp.publish()
@@ -125,4 +126,15 @@ def test_describe_next_omits_empty_label():
 
 def test_start_publishes_then_goes_online(tp):
     tp.tp.start()
-    assert tp.export.calls[:6] == ['update'] * 5 + ['online']
+    assert tp.export.calls[:7] == ['update'] * 6 + ['online']
+
+
+def test_set_held_holds_today_and_publishes(tp):
+    tp.h['set_held']('true')
+    assert tp.store.get()['held_on'] == '2026-10-12'
+    assert ('held', True) in tp.export.updates
+    assert tp.tp.values()['next_bell'] == 'Tue 11:00 Recess'
+    tp.h['set_held']('maybe')
+    assert 'held' in tp.tp.values()['last_error']
+    tp.h['set_held'](False)
+    assert tp.store.get()['held_on'] is None

@@ -1,8 +1,11 @@
 """Stored bell sounds: name rules, WAV format checks, listing, and gain."""
+import array
 import audioop
 import io
+import math
 import os
 import re
+import sys
 import wave
 
 from bells import ValidationError
@@ -71,3 +74,25 @@ def apply_gain(frames, gain):
     if gain >= 1.0:
         return frames
     return audioop.mul(frames, SAMPLE_WIDTH, gain)
+
+
+def make_tone_wav(hz=1000, seconds=3, level=0.25):
+    """Return a sine tone as 48 kHz 16-bit stereo WAV bytes, with 10 ms fades to avoid clicks."""
+    total = int(RATE * seconds)
+    fade = RATE // 100
+    peak = level * 32767
+    samples = array.array('h')
+    for n in range(total):
+        envelope = min(1.0, n / fade, (total - n) / fade)
+        value = int(peak * envelope * math.sin(2 * math.pi * hz * n / RATE))
+        samples.append(value)
+        samples.append(value)
+    if sys.byteorder == 'big':
+        samples.byteswap()
+    buffer = io.BytesIO()
+    with wave.open(buffer, 'wb') as w:
+        w.setnchannels(CHANNELS)
+        w.setsampwidth(SAMPLE_WIDTH)
+        w.setframerate(RATE)
+        w.writeframes(samples.tobytes())
+    return buffer.getvalue()

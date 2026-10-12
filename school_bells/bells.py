@@ -5,7 +5,7 @@ import os
 import re
 import secrets
 import threading
-from datetime import timedelta
+from datetime import date, timedelta
 
 DAYS = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')  # index matches datetime.weekday()
 TIME_RE = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
@@ -18,7 +18,7 @@ class ValidationError(ValueError):
 
 
 def default_state():
-    return {'enabled': True, 'master_volume': 80, 'bells': []}
+    return {'enabled': True, 'master_volume': 80, 'held_on': None, 'bells': []}
 
 
 def check_volume(value, what):
@@ -97,6 +97,7 @@ def load_state(path, log):
             data = json.load(f)
         state = validate_settings(data)
         state['bells'] = validate_bells(data.get('bells'))
+        state['held_on'] = data.get('held_on') if _is_iso_date(data.get('held_on')) else None
         return state
     except (OSError, ValueError) as e:
         log.error('Could not read %s (%r). Starting with an empty schedule.' % (path, e))
@@ -105,6 +106,19 @@ def load_state(path, log):
         except OSError:
             pass
         return default_state()
+
+
+def _is_iso_date(value):
+    try:
+        date.fromisoformat(value)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def is_held(state, now):
+    """True when scheduled bells are held for now's date."""
+    return state.get('held_on') == now.date().isoformat()
 
 
 def save_state(path, state):
@@ -119,7 +133,7 @@ def save_state(path, state):
 
 def due_bells(state, now, rung):
     """Return the bells that ring in now's minute and haven't rung on now's date."""
-    if not state['enabled']:
+    if not state['enabled'] or is_held(state, now):
         return []
     day = DAYS[now.weekday()]
     hhmm = now.strftime('%H:%M')
@@ -129,11 +143,13 @@ def due_bells(state, now, rung):
 
 
 def next_bell(state, now):
-    """Return the next bell after now's minute, looking up to a week ahead."""
+    """Return the next bell that will ring after now's minute, looking up to a week ahead."""
     if not state['enabled']:
         return None
     current = now.strftime('%H:%M')
     for offset in range(8):
+        if offset == 0 and is_held(state, now):
+            continue
         date = (now + timedelta(days=offset)).date()
         day = DAYS[date.weekday()]
         options = [b for b in state['bells']
@@ -142,6 +158,11 @@ def next_bell(state, now):
             b = min(options, key=lambda b: b['time'])
             return {'id': b['id'], 'label': b['label'], 'time': b['time'], 'date': date.isoformat()}
     return None
+
+
+def ring_target(state, now):
+    """Return the bell Ring now plays: the next bell, ignoring the master switch and any hold."""
+    return next_bell(dict(state, enabled=True, held_on=None), now)
 
 
 class Store:
@@ -175,6 +196,16 @@ class Store:
             save_state(self._path, new)
             self._state = new
         return clean
+
+    def set_held(self, held, today):
+        """Hold scheduled bells for today (they resume at midnight), or resume them."""
+        if not isinstance(held, bool):
+            raise ValidationError('held must be true or false')
+        with self._lock:
+            new = dict(self._state, held_on=today.isoformat() if held else None)
+            save_state(self._path, new)
+            self._state = new
+        return held
 
     def bells_using(self, sound):
         with self._lock:

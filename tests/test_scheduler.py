@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -114,3 +114,12 @@ def test_events_receive_rings_and_errors_instead_of_log(env, log):
     assert events.rang == ['r1']
     assert 'not connected' in events.errors[0] and 'missing' in events.errors[1]
     assert log.errors == []
+
+
+def test_hold_blocks_todays_bells_only(env):
+    sched, store, player, _ = env
+    store.set_held(True, date(2026, 10, 12))
+    sched.tick(at(12, 11, 0))
+    assert player.plays == []
+    sched.tick(at(13, 11, 0))
+    assert len(player.plays) == 1

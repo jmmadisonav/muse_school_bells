@@ -26,11 +26,14 @@ def app(tmp_path, log):
     (static_dir / 'index.html').write_text('<h1>bells</h1>')
     store = bells.Store(str(tmp_path / 'bells.json'), log)
     player = FakePlayer()
+    test_tone = tmp_path / 'test-tone.wav'
     server = web.make_server(0, store, player, str(sounds_dir), str(static_dir), log,
-                             clock=lambda: NOW, host='127.0.0.1')
+                             clock=lambda: NOW, host='127.0.0.1',
+                             adapter_connected=lambda: True, test_tone_path=str(test_tone))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield types.SimpleNamespace(port=server.server_address[1], store=store, player=player,
-                                sounds_dir=sounds_dir, static_dir=static_dir)
+                                sounds_dir=sounds_dir, static_dir=static_dir,
+                                test_tone=test_tone)
     server.shutdown()
     server.server_close()
 
@@ -91,7 +94,7 @@ def test_put_bells_validates_and_saves(app):
 
 def test_put_settings_partial(app):
     assert call(app, 'PUT', '/api/settings', {'master_volume': 30}) == (
-        200, {'enabled': True, 'master_volume': 30})
+        200, {'enabled': True, 'master_volume': 30, 'held': False})
     assert call(app, 'PUT', '/api/settings', {'master_volume': 300})[0] == 400
 
 
@@ -149,3 +152,53 @@ def test_play_and_stop(app):
 
 def test_unknown_route_is_404(app):
     assert call(app, 'GET', '/api/nope')[0] == 404
+
+
+def test_fonts_are_served_from_allow_list(app):
+    fonts = app.static_dir / 'fonts'
+    fonts.mkdir()
+    (fonts / 'Hurme-Bold.woff2').write_bytes(b'wOF2data')
+    (app.static_dir / 'secret.txt').write_text('x')
+    conn = http.client.HTTPConnection('127.0.0.1', app.port, timeout=5)
+    conn.request('GET', '/static/fonts/Hurme-Bold.woff2')
+    response = conn.getresponse()
+    assert response.status == 200
+    assert response.getheader('Content-Type') == 'font/woff2'
+    assert response.read() == b'wOF2data'
+    conn.close()
+    assert call(app, 'GET', '/static/fonts/../secret.txt')[0] == 404
+    assert call(app, 'GET', '/static/fonts/x.txt')[0] == 404
+    assert call(app, 'GET', '/static/fonts/missing.woff2')[0] == 404
+
+
+def test_state_reports_hold_ring_target_and_adapter(app):
+    upload(app, 'recess.wav', make_wav(0.1))
+    app.store.set_bells([RECESS])
+    state = call(app, 'GET', '/api/state')[1]
+    assert state['held'] is False
+    assert state['ring_target']['label'] == 'Recess'
+    assert state['adapter'] == {'connected': True, 'last_playback': None}
+    assert call(app, 'PUT', '/api/settings', {'held': True}) == (
+        200, {'enabled': True, 'master_volume': 80, 'held': True})
+    state = call(app, 'GET', '/api/state')[1]
+    assert state['held'] is True
+    assert state['next_bell']['date'] == '2026-10-13'
+    assert state['ring_target']['date'] == '2026-10-12'
+    assert call(app, 'PUT', '/api/settings', {'held': 'yes'})[0] == 400
+
+
+def test_ring_now_plays_ring_target_at_its_volume(app):
+    upload(app, 'recess.wav', make_wav(0.1))
+    app.store.set_bells([RECESS])
+    assert call(app, 'POST', '/api/ring', {}) == (200, {'playing': 'recess.wav'})
+    path, gain = app.player.plays[-1]
+    assert path.endswith('recess.wav') and round(gain, 2) == 0.4
+    app.store.set_bells([])
+    assert call(app, 'POST', '/api/ring', {})[0] == 409
+
+
+def test_test_tone_plays_at_master_volume(app):
+    assert call(app, 'POST', '/api/test-tone', {})[0] == 404
+    app.test_tone.write_bytes(make_wav(0.1))
+    assert call(app, 'POST', '/api/test-tone', {}) == (200, {'playing': 'test-tone.wav'})
+    assert app.player.plays[-1] == (str(app.test_tone), 0.8)

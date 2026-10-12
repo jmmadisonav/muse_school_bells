@@ -1,18 +1,22 @@
 """HTTP server for the bell page and its JSON API."""
 import json
 import os
+import re
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import bells
 import sounds
+import audio
 from audio import AudioError
 
 MAX_JSON_BYTES = 1024 * 1024
+FONT_RE = re.compile(r'^[A-Za-z0-9-]+\.woff2$')
 
 
-def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime.now, host=''):
+def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime.now, host='',
+                adapter_connected=audio.adapter_connected, test_tone_path=None):
     """Return a server for the bell page and API. Call serve_forever() on it."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -36,21 +40,28 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
         def _route(self, method):
             url = urlsplit(self.path)
             path, query = url.path, parse_qs(url.query)
+            self._body_read = False
             try:
                 if method == 'GET' and path == '/':
                     return self._index()
+                if method == 'GET' and path.startswith('/static/fonts/'):
+                    return self._font(path[len('/static/fonts/'):])
                 if method == 'GET' and path == '/api/state':
                     return self._send_json(200, self._state())
                 if method == 'PUT' and path == '/api/bells':
                     return self._put_bells()
                 if method == 'PUT' and path == '/api/settings':
-                    return self._send_json(200, store.set_settings(self._read_json()))
+                    return self._put_settings()
                 if method == 'POST' and path == '/api/sounds':
                     return self._upload(query)
                 if method == 'DELETE' and path.startswith('/api/sounds/'):
                     return self._delete_sound(unquote(path[len('/api/sounds/'):]))
                 if method == 'POST' and path == '/api/play':
                     return self._play()
+                if method == 'POST' and path == '/api/ring':
+                    return self._ring()
+                if method == 'POST' and path == '/api/test-tone':
+                    return self._test_tone()
                 if method == 'POST' and path == '/api/stop':
                     player.stop()
                     return self._send_json(200, {'playing': None})
@@ -73,9 +84,21 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             self.wfile.write(data)
 
         def _error(self, status, message):
-            # The request body may be unread, so don't reuse this connection.
+            # Closing a socket with unread request bytes resets the connection, and the
+            # client never sees this response. Drain a small unread body first.
+            if not self._body_read:
+                try:
+                    length = int(self.headers.get('Content-Length') or 0)
+                except ValueError:
+                    length = 0
+                if 0 < length <= MAX_JSON_BYTES:
+                    self._read_body(length)
             self.close_connection = True
             self._send_json(status, {'error': message})
+
+        def _read_body(self, length):
+            self._body_read = True
+            return self.rfile.read(length)
 
         def _read_json(self):
             try:
@@ -85,7 +108,7 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             if length > MAX_JSON_BYTES:
                 raise bells.ValidationError('Request is too large')
             try:
-                return json.loads(self.rfile.read(length) or b'null')
+                return json.loads(self._read_body(length) or b'null')
             except ValueError:
                 raise bells.ValidationError('Request body must be JSON')
 
@@ -102,6 +125,19 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             self.end_headers()
             self.wfile.write(data)
 
+        def _font(self, name):
+            path = os.path.join(static_dir, 'fonts', name)
+            if not FONT_RE.match(name) or not os.path.isfile(path):
+                return self._error(404, 'Not found')
+            with open(path, 'rb') as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header('Content-Type', 'font/woff2')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'max-age=86400')
+            self.end_headers()
+            self.wfile.write(data)
+
         def _state(self):
             now = clock()
             state = store.get()
@@ -110,12 +146,49 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                 'weekday': bells.DAYS[now.weekday()],
                 'enabled': state['enabled'],
                 'master_volume': state['master_volume'],
+                'held': bells.is_held(state, now),
                 'bells': [dict(b, missing_sound=not sounds.sound_exists(sounds_dir, b['sound']))
                           for b in state['bells']],
                 'sounds': sounds.list_sounds(sounds_dir),
                 'playing': player.playing,
                 'next_bell': bells.next_bell(state, now),
+                'ring_target': bells.ring_target(state, now),
+                'adapter': {'connected': adapter_connected(),
+                            'last_playback': getattr(player, 'last_playback', None)},
             }
+
+        def _put_settings(self):
+            body = self._read_json()
+            if not isinstance(body, dict):
+                raise bells.ValidationError('Settings must be a JSON object')
+            if 'held' in body and not isinstance(body['held'], bool):
+                raise bells.ValidationError('held must be true or false')
+            others = {k: v for k, v in body.items() if k != 'held'}
+            if others:
+                store.set_settings(others)
+            if 'held' in body:
+                store.set_held(body['held'], clock().date())
+            state = store.get()
+            self._send_json(200, {'enabled': state['enabled'], 'master_volume': state['master_volume'],
+                                  'held': bells.is_held(state, clock())})
+
+        def _ring(self):
+            state = store.get()
+            target = bells.ring_target(state, clock())
+            if target is None:
+                return self._error(409, 'No bells are scheduled, so there is nothing to ring')
+            bell = next(b for b in state['bells'] if b['id'] == target['id'])
+            if not sounds.sound_exists(sounds_dir, bell['sound']):
+                return self._error(404, 'Sound %s does not exist' % bell['sound'])
+            gain = state['master_volume'] / 100 * bell['volume'] / 100
+            player.play(os.path.join(sounds_dir, bell['sound']), gain)
+            self._send_json(200, {'playing': bell['sound']})
+
+        def _test_tone(self):
+            if not test_tone_path or not os.path.isfile(test_tone_path):
+                return self._error(404, 'The test tone is not available')
+            player.play(test_tone_path, store.get()['master_volume'] / 100)
+            self._send_json(200, {'playing': os.path.basename(test_tone_path)})
 
         def _put_bells(self):
             body = self._read_json()
@@ -126,7 +199,6 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             self._send_json(200, {'bells': clean})
 
         def _upload(self, query):
-            name = sounds.check_name(query.get('name', [''])[0])
             length_header = self.headers.get('Content-Length')
             if length_header is None:
                 return self._error(411, 'Content-Length is required')
@@ -136,7 +208,8 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
                 raise bells.ValidationError('Invalid Content-Length')
             if length > sounds.MAX_UPLOAD_BYTES:
                 return self._error(413, 'Sounds are limited to 50 MB')
-            data = self.rfile.read(length)
+            data = self._read_body(length)
+            name = sounds.check_name(query.get('name', [''])[0])
             seconds = sounds.wav_seconds(data)
             try:
                 sounds.save_sound(sounds_dir, name, data,

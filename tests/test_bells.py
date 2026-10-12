@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -136,3 +136,37 @@ def test_store_bells_using(tmp_path, log):
     store = bells.Store(str(tmp_path / 'bells.json'), log)
     store.set_bells([bell(), bell(label='', time='12:00'), bell(label='Lunch', time='13:00', sound='x.wav')])
     assert store.bells_using('recess.wav') == ['Recess', '12:00']
+
+
+def test_hold_stops_due_bells_on_its_date_only():
+    state = dict(state_with(bell(id='r1')), held_on='2026-10-12')
+    assert bells.due_bells(state, MON_1100, set()) == []
+    assert bells.due_bells(state, datetime(2026, 10, 13, 11, 0), set())
+
+
+def test_next_bell_skips_held_day_and_ring_target_ignores_hold_and_switch():
+    state = dict(state_with(bell(id='re')), held_on='2026-10-12')
+    morning = datetime(2026, 10, 12, 10, 52)
+    assert bells.next_bell(state, morning)['date'] == '2026-10-13'
+    assert bells.ring_target(state, morning)['date'] == '2026-10-12'
+    assert bells.ring_target(dict(state, enabled=False), morning)['id'] == 're'
+    assert bells.ring_target(state_with(), MON_1100) is None
+
+
+def test_store_set_held_persists_and_validates(tmp_path, log):
+    path = tmp_path / 'bells.json'
+    store = bells.Store(str(path), log)
+    store.set_held(True, date(2026, 10, 12))
+    assert store.get()['held_on'] == '2026-10-12'
+    assert bells.Store(str(path), log).get()['held_on'] == '2026-10-12'
+    store.set_held(False, date(2026, 10, 12))
+    assert store.get()['held_on'] is None
+    with pytest.raises(ValidationError):
+        store.set_held('yes', date(2026, 10, 12))
+
+
+def test_load_ignores_unreadable_held_on(tmp_path, log):
+    path = tmp_path / 'bells.json'
+    path.write_text(json.dumps(dict(bells.default_state(), held_on='someday')))
+    assert bells.load_state(str(path), log)['held_on'] is None
+    assert not log.errors

@@ -7,7 +7,7 @@ from mojo import context
 log = context.log
 device = context.devices.get('school_bells')
 
-for name in ('enabled', 'master_volume', 'playing', 'next_bell', 'last_error'):
+for name in ('enabled', 'master_volume', 'held', 'playing', 'next_bell', 'last_error'):
     try:
         log.info('%s = %r' % (name, getattr(device, name).value))
     except Exception as e:

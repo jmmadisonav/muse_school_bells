@@ -4,9 +4,11 @@ The Muse kernel has no sound support, so this module streams PCM to the
 adapter's isochronous endpoint itself.
 """
 import ctypes.util
+import glob
 import os
 import threading
 import wave
+from datetime import datetime
 
 import sounds
 
@@ -39,6 +41,22 @@ def _load_usb1():
         import usb1
         _usb1 = usb1
     return _usb1
+
+
+def adapter_connected(devices_dir='/sys/bus/usb/devices'):
+    """True if the adapter is plugged in. Reads sysfs only, so it never opens the device."""
+    want = ('%04x' % VENDOR_ID, '%04x' % PRODUCT_ID)
+    for device in glob.glob(os.path.join(devices_dir, '*')):
+        try:
+            with open(os.path.join(device, 'idVendor')) as f:
+                vendor = f.read().strip().lower()
+            with open(os.path.join(device, 'idProduct')) as f:
+                product = f.read().strip().lower()
+        except OSError:
+            continue
+        if (vendor, product) == want:
+            return True
+    return False
 
 
 def iter_chunks(read_frames, gain):
@@ -218,6 +236,7 @@ class Player:
         self._thread = None
         self._stop = threading.Event()
         self._playing = None
+        self.last_playback = None  # {time, failed_transfers} after each completed stream
 
     @property
     def playing(self):
@@ -258,6 +277,8 @@ class Player:
         name = self._playing
         try:
             errors = session.stream(iter_chunks(wav.readframes, gain), stop)
+            self.last_playback = {'time': datetime.now().isoformat(timespec='seconds'),
+                                  'failed_transfers': errors}
             if errors:
                 self._log.error('%d USB transfers failed while playing %s' % (errors, name))
         except Exception as e:

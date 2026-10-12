@@ -68,3 +68,15 @@ def test_apply_gain_scales_and_clamps():
     assert sounds.apply_gain(frames, 1.0) == frames
     assert sounds.apply_gain(frames, 3.0) == frames
     assert struct.unpack('<hh', sounds.apply_gain(frames, -1)) == (0, 0)
+
+
+def test_make_tone_wav_is_three_seconds_at_quarter_level():
+    import array
+    import io
+    import wave
+    data = sounds.make_tone_wav()
+    assert sounds.wav_seconds(data) == pytest.approx(3.0)
+    with wave.open(io.BytesIO(data)) as w:
+        samples = array.array('h', w.readframes(w.getnframes()))
+    assert 8150 <= max(samples) <= 8192
+    assert samples[0] == 0 and samples[1] == 0

@@ -28,6 +28,7 @@ class FakePlayer:
         self.stops = 0
         self.playing = None
         self.fail = fail
+        self.last_playback = None
 
     def play(self, path, gain):
         if self.fail is not None:

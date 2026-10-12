@@ -25,7 +25,7 @@ class Scheduler:
 
     def prime(self, now):
         """Mark bells in now's minute as rung, so a restart can't ring them twice."""
-        state = dict(self._store.get(), enabled=True)
+        state = dict(self._store.get(), enabled=True, held_on=None)
         for b in bells.due_bells(state, now, set()):
             self._rung.add((b['id'], now.date().isoformat()))
 
