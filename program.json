@@ -1,0 +1,10 @@
+{
+  "id": "school_bells",
+  "name": "school_bells",
+  "description": "description",
+  "disabled": false,
+  "provider": "python",
+  "scope": "",
+  "script": "main.py",
+  "envvars": {}
+}

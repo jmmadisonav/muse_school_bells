@@ -1,0 +1,10 @@
+.*
+mojo.d.ts
+jsconfig.json
+mojo
+.git
+AMX MUSE, Programming Guide, rev_1-7.pdfdocs
+tests
+tools
+design
+requirements-dev.txt

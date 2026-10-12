@@ -1,0 +1,9 @@
+data/
+__pycache__/
+.pytest_cache/
+*.wav.tmp
+bells_probe_marker.txt
+.venv/
+.local/
+.superpowers/
+AMX MUSE, Programming Guide, rev_1-7.pdf
