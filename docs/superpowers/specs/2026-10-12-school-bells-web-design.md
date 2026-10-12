@@ -531,3 +531,73 @@ Notes:
   message.
 - **Limit:** from the browser's side, a stopped program and a network outage
   look the same, so the page reports both as "Can't reach the bell controller".
+
+## Multiple schedules (2026-10-12)
+
+The user chose every option below. Where this section differs from earlier
+sections, this section wins.
+
+### Model
+
+- **Schedules:** each schedule has an `id`, a `name` (unique, at most 40
+  characters), a `default` flag, an optional yearly `range`
+  (`{"from": "MM-DD", "to": "MM-DD"}`, inclusive, which may wrap past New
+  Year), and its own `bells` list. Bell ids are unique across all schedules.
+- **The default schedule:** exactly one schedule is the default. It has no
+  range and covers every day that no range covers. Ranges can't overlap.
+- **Migration:** a `bells.json` without `schedules` loads as one default
+  schedule, `id` `standard`, named Standard, holding the existing bells.
+- **The active schedule for a date** is the schedule whose range contains it,
+  otherwise the default. A manual pick (`override`) replaces that from the day
+  it's made until the automatic schedule next changes, when a range starts or
+  ends. Picking the automatic schedule, or choosing Follow dates, clears the
+  override. Changing any range or the default also clears it.
+- **Bell behaviour per schedule:** ringing, skipped-bell logging, the next
+  bell, and Ring now use each date's active schedule. Skip next skips the
+  bell's next ring on a date its schedule is active. The clash rule applies
+  within a schedule. Hold and the master switch cover all schedules.
+
+### API
+
+- **Schedule endpoints:**
+
+  | Method and path | Behavior |
+  |---|---|
+  | `POST /api/schedules` | Creates a schedule from `{"name", "copy_from"?}`. With `copy_from`, it copies that schedule's bells with new ids and no skips. Returns 201. |
+  | `PUT /api/schedules/<id>` | Changes any of `name`, `range`, and `default`. Making a schedule the default removes its range. |
+  | `DELETE /api/schedules/<id>` | Deletes a schedule. Deleting the default returns 400. |
+  | `PUT /api/bells?schedule=<id>` | Replaces that schedule's bells. Without `schedule`, it edits today's active schedule. |
+  | `PUT /api/settings` | Also accepts `active_schedule`: a schedule id for a manual pick, or `null` to follow the dates. |
+
+- **`GET /api/state`:** adds `schedules` (each with its bells, and
+  `missing_sound` on each bell) and
+  `active_schedule: {"id", "name", "manual"}`. `bells` stays as today's
+  active schedule's bells.
+- **Unknown ids:** an unknown schedule id returns 404.
+
+### Touch point and log
+
+- **`active_schedule`:** a string param with the setter
+  `set_active_schedule`. Its value is the active schedule's name. Setting it
+  to a schedule name, matched without regard to case, makes a manual pick.
+  Setting it to the automatic schedule's name, or to `auto`, follows the
+  dates.
+- **Logging:** the log records every change of active schedule as
+  `schedule_changed`. The `label` holds the new schedule's name, and the
+  `detail` is `manual` or `dates`. The scheduler logs automatic changeovers
+  with the source `scheduled`.
+
+### Page
+
+- **Schedules tab:** a schedule bar above the Bells panel lists each schedule
+  with Active, Default, and date-range tags, plus New schedule. The selected
+  schedule's bells are edited in the Bells panel. A settings row holds:
+  - the name
+  - the date range (day and month dropdowns)
+  - Use now or Follow dates
+  - Duplicate
+  - Make default
+  - Delete
+- **Today tab:** the schedule panel header names the schedule in use, and adds
+  "picked by hand" when there's an override.
+- **Device tab:** the touch-point list gains `active_schedule`.

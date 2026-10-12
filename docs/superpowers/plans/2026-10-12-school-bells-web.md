@@ -2893,3 +2893,39 @@ Branch `bells-v2`. Spec section "Round 2 changes". Written at interface and test
 - `node --check` passes on the script.
 - Headless Edge screenshots of every tab, in both 24-hour and 12-hour modes, with skipped and disabled bells and log entries seeded through the API.
 - Today still fits a 1920×950 window.
+
+---
+
+### Task 14: Schedule model (`bells.py`)
+
+Spec section "Multiple schedules". Written at interface and test level; the code is in the task's commits.
+
+**Interfaces produced:**
+- State shape: `schedules` and `override` replace the top-level `bells`.
+- `default_state()` holds one default schedule, `standard`.
+- Range functions: `check_range`, `in_range`, and `validate_schedules`.
+- Lookup functions: `default_schedule`, `auto_schedule`, `schedule_for(state, day)`, `bells_for(state, day)`, `find_schedule`, and `find_bell`.
+- `due_bells`, `skipped_bells`, and `next_bell` use `bells_for`.
+- `next_occurrence(bell, now, from_tomorrow=False, state=None)` searches up to 400 days when given a state.
+- `load_state` migrates an old file.
+- `Store` methods:
+  - `bells(schedule_id=None)`
+  - `set_bells(bells, sound_exists=None, schedule_id=None)`
+  - `create_schedule(name, copy_from=None)`
+  - `update_schedule(id, changes)`
+  - `delete_schedule(id)`
+  - `set_active(schedule_id_or_None, today)`
+  - `set_skip`, which finds the bell in any schedule
+  - `bells_using`, which searches all schedules
+
+### Task 15: Schedules in the scheduler, touch points, log, and API
+
+**Interfaces produced:**
+- The `active_schedule` touch point and its `set_active_schedule` handler, declared in `program.json`.
+- `History.record_setting_changes` also logs `schedule_changed`.
+- The scheduler logs automatic changeovers.
+- The web endpoints and state fields in the spec.
+
+### Task 16: Schedules on the page
+
+The schedule bar and settings row on the Schedules tab, the schedule name on Today, and `active_schedule` on Device. Checked in headless Edge.
