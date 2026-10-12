@@ -202,3 +202,44 @@ def test_test_tone_plays_at_master_volume(app):
     app.test_tone.write_bytes(make_wav(0.1))
     assert call(app, 'POST', '/api/test-tone', {}) == (200, {'playing': 'test-tone.wav'})
     assert app.player.plays[-1] == (str(app.test_tone), 0.8)
+
+
+
+def raw_request(app, head, body=b'', gap=0.0):
+    """Send head, optionally wait, then body, and return the status line (or the socket error)."""
+    import socket
+    import time
+    sock = socket.create_connection(('127.0.0.1', app.port), timeout=3)
+    try:
+        sock.sendall(head)
+        if gap:
+            time.sleep(gap)
+        if body:
+            sock.sendall(body)
+        return sock.recv(4096).split(b'\r\n', 1)[0]
+    except OSError as e:
+        return repr(e)
+    finally:
+        sock.close()
+
+
+def test_negative_content_length_is_rejected_without_reading(app):
+    for path in (b'/api/settings', b'/api/sounds?name=a.wav'):
+        method = b'PUT' if path == b'/api/settings' else b'POST'
+        head = method + b' ' + path + b' HTTP/1.1\r\nHost: x\r\nContent-Length: -1\r\n\r\n'
+        assert raw_request(app, head) == b'HTTP/1.0 400 Bad Request'
+
+
+def test_small_body_sent_after_headers_is_drained(app):
+    head = b'POST /api/stop HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n'
+    for _ in range(3):
+        assert raw_request(app, head, b'{}', gap=0.05) == b'HTTP/1.0 200 OK'
+
+
+def test_successful_gets_are_not_logged_but_changes_and_errors_are(app, log):
+    call(app, 'GET', '/api/state')
+    call(app, 'PUT', '/api/settings', {'master_volume': 50})
+    call(app, 'GET', '/api/nope')
+    assert not [line for line in log.infos if 'GET /api/state' in line]
+    assert [line for line in log.infos if 'PUT /api/settings' in line]
+    assert [line for line in log.infos if 'GET /api/nope' in line]

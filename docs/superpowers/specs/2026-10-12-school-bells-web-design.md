@@ -351,7 +351,9 @@ confirmed its use for this internal page.
   and the next play tries to open the adapter again.
 - An exception in one bell's playback never stops the scheduler or the web
   server threads.
-- The web server logs each request's method, path, and status.
+- The web server logs each request's method, path, and status, except
+  successful `GET` requests. Most of those are the page's 2-second polls, which
+  would flood the controller log.
 
 ## Testing
 

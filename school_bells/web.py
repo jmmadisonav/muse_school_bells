@@ -25,6 +25,13 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
         def log_message(self, fmt, *args):
             log.info('%s %s' % (self.address_string(), fmt % args))
 
+        def log_request(self, code='-', size='-'):
+            # Successful GETs are mostly the page's 2-second polls. Logging them would
+            # flood the controller log, so log only changes and errors.
+            if self.command == 'GET' and isinstance(code, int) and code < 400:
+                return
+            super().log_request(code, size)
+
         def do_GET(self):
             self._route('GET')
 
@@ -40,8 +47,17 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
         def _route(self, method):
             url = urlsplit(self.path)
             path, query = url.path, parse_qs(url.query)
+            self._body = b''
             self._body_read = False
             try:
+                if not (method == 'POST' and path == '/api/sounds'):
+                    # Read every small body up front, even for handlers that ignore it:
+                    # closing the socket with unread bytes resets the connection, and
+                    # the client loses the response.
+                    length = self._content_length() or 0
+                    if length > MAX_JSON_BYTES:
+                        raise bells.ValidationError('Request is too large')
+                    self._body = self._read_body(length)
                 if method == 'GET' and path == '/':
                     return self._index()
                 if method == 'GET' and path.startswith('/static/fonts/'):
@@ -88,13 +104,26 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             # client never sees this response. Drain a small unread body first.
             if not self._body_read:
                 try:
-                    length = int(self.headers.get('Content-Length') or 0)
-                except ValueError:
+                    length = self._content_length() or 0
+                except bells.ValidationError:
                     length = 0
                 if 0 < length <= MAX_JSON_BYTES:
                     self._read_body(length)
             self.close_connection = True
             self._send_json(status, {'error': message})
+
+        def _content_length(self):
+            """Return the request's Content-Length, None if absent, or raise for a bad value."""
+            header = self.headers.get('Content-Length')
+            if header is None:
+                return None
+            try:
+                length = int(header)
+            except ValueError:
+                length = -1
+            if length < 0:
+                raise bells.ValidationError('Invalid Content-Length')
+            return length
 
         def _read_body(self, length):
             self._body_read = True
@@ -102,13 +131,7 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
 
         def _read_json(self):
             try:
-                length = int(self.headers.get('Content-Length') or 0)
-            except ValueError:
-                raise bells.ValidationError('Invalid Content-Length')
-            if length > MAX_JSON_BYTES:
-                raise bells.ValidationError('Request is too large')
-            try:
-                return json.loads(self._read_body(length) or b'null')
+                return json.loads(self._body or b'null')
             except ValueError:
                 raise bells.ValidationError('Request body must be JSON')
 
@@ -199,13 +222,9 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
             self._send_json(200, {'bells': clean})
 
         def _upload(self, query):
-            length_header = self.headers.get('Content-Length')
-            if length_header is None:
+            length = self._content_length()
+            if length is None:
                 return self._error(411, 'Content-Length is required')
-            try:
-                length = int(length_header)
-            except ValueError:
-                raise bells.ValidationError('Invalid Content-Length')
             if length > sounds.MAX_UPLOAD_BYTES:
                 return self._error(413, 'Sounds are limited to 50 MB')
             data = self._read_body(length)
