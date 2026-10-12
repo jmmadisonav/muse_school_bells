@@ -488,3 +488,24 @@ The footer no longer names Madison Group Enterprises.
   OFF or SKIPPED.
 - **Schedules tab:** each bell has an on/off switch and Skip next or Undo
   skip, and shows "Skipping {date}" while a skip is set.
+
+## Round 3: Schedules tab design (2026-10-12)
+
+The Schedules tab follows `design/design_handoff_school_bells/Schedules.dc.html`
+and its README section, with these decisions from the user:
+
+- The editor keeps the hour, minute, and am/pm dropdowns that follow the time
+  format preference, instead of the design's browser time picker.
+- Every bell needs a name. The page won't save a bell without one. Existing
+  bells without names keep working and show their time.
+
+Notes:
+
+- Ring now from a bell's ⋯ menu calls `POST /api/play` with `{"bell": "<id>"}`,
+  which plays that bell at its volume and logs it as Ring now with the bell's
+  name.
+- Saving the editor takes the bell's on/off state and skip from the latest
+  state, so a change made elsewhere while the editor is open isn't undone.
+- Deleting a sound still asks for confirmation, although the design doesn't
+  show one, because an uploaded file can't be recovered.
+- The "Scheduled bells are off" banner shows under the nav on every tab.

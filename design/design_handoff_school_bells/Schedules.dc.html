@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/madison-group-enterprises-design-system-b6110c7d-d0e8-4cc3-a230-b4489a5ae549/colors_and_type.css">
+<script src="_ds/madison-group-enterprises-design-system-b6110c7d-d0e8-4cc3-a230-b4489a5ae549/_ds_bundle.js"></script>
+<style>body{margin:0;background:#e4e5e6}a{color:#2e3c49}a:hover{color:#1a232b;text-decoration:underline}input,select,button{font-family:inherit}</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;font-family:var(--font-sans);font-size:15px;line-height:1.6;color:#2e3c49;background:#e4e5e6">
+  <header style="background:#fff;box-shadow:0 2px 4px -2px rgba(46,60,73,0.4)">
+    <div style="max-width:1320px;margin:0 auto;padding:0 20px;min-height:60px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap">
+      <div style="display:flex;align-items:baseline;gap:15px;flex-wrap:wrap">
+        <div style="font-size:24px;font-weight:600">School bells<span style="color:#e31837">.</span></div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#909dab">MUSE controller</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:20px;font-size:13px">
+        <div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;background:#e31837"></span>Adapter connected</div>
+        <div style="font-size:20px;font-variant-numeric:tabular-nums">{{ clock }}</div>
+      </div>
+    </div>
+    <div style="background:#2e3c49;height:44px">
+      <div style="max-width:1320px;margin:0 auto;padding:0 20px;height:100%;display:flex;align-items:stretch;gap:30px;font-size:13px;text-transform:uppercase;letter-spacing:.08em;overflow-x:auto">
+        <span style="display:flex;align-items:center;color:#909dab">Today</span>
+        <span style="display:flex;align-items:center;color:#fff;border-bottom:3px solid #e31837;padding-top:3px">Schedules</span>
+        <span style="display:flex;align-items:center;color:#909dab">Device</span>
+        <span style="display:flex;align-items:center;color:#909dab">Log</span>
+        <span style="display:flex;align-items:center;color:#909dab">Preferences</span>
+      </div>
+    </div>
+  </header>
+
+  <sc-if value="{{ disabledAll }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#2e3c49;color:#fff;border-top:1px solid #445c6d">
+      <div style="max-width:1320px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:12px;font-size:14px"><span style="width:8px;height:8px;background:#909dab"></span>Scheduled bells are off. Nothing will ring until you turn them back on.</div>
+    </div>
+  </sc-if>
+
+  <main style="flex:1">
+    <div style="max-width:1320px;margin:0 auto;padding:40px 20px 60px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:20px;align-items:start">
+
+      <section style="background:#fff;border:1px solid #e4e5e6;grid-column:span 2;min-width:0">
+        <div style="padding:30px 35px 20px;display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap">
+          <div>
+            <h2 style="margin:0;font-size:26px;font-weight:400;line-height:1.2">Bells<span style="color:#e31837">.</span></h2>
+            <div style="font-size:13px;color:#445c6d;margin-top:6px">{{ summary }}</div>
+          </div>
+          <x-import component-from-global-scope="Button" variant="red" small="{{ true }}" on-click="{{ addBell }}" hint-size="200px,50px">Add bell</x-import>
+        </div>
+
+        <div style="display:grid;grid-template-columns:76px minmax(0,1fr) 176px 132px;gap:20px;padding:10px 35px;border-top:1px solid #e4e5e6;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#909dab">
+          <span>Time</span><span>Bell and sound</span><span>Days</span><span style="text-align:right">Status</span>
+        </div>
+
+        <sc-for list="{{ rows }}" as="r" hint-placeholder-count="10">
+          <div style="border-top:1px solid #e4e5e6;border-left:3px solid {{ r.accent }};background:{{ r.bg }}">
+            <div style="display:grid;grid-template-columns:76px minmax(0,1fr) 176px 132px;gap:20px;align-items:center;padding:14px 35px 14px 32px">
+              <div style="font-size:20px;font-variant-numeric:tabular-nums;color:{{ r.ink }}">{{ r.time }}</div>
+              <div style="min-width:0;color:{{ r.ink }}">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                  <span style="font-size:16px">{{ r.label }}</span>
+                  <sc-if value="{{ r.isNext }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#fff;background:#e31837;padding:2px 7px 1px">Next</span></sc-if>
+                  <sc-if value="{{ r.skipped }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#2e3c49;border:1px solid #2e3c49;padding:1px 6px 0">Skipping next</span></sc-if>
+                  <sc-if value="{{ r.dupe }}" hint-placeholder-val="{{ false }}"><span title="Another bell has the same name" style="font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#445c6d;background:#e4e5e6;padding:2px 7px 1px">Duplicate name</span></sc-if>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#445c6d;min-width:0">
+                  <button onClick="{{ r.preview }}" title="Preview sound" style="flex:none;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border:1px solid #e4e5e6;background:{{ r.playBg }};color:{{ r.playInk }};cursor:pointer;padding:0;transition:all 200ms" style-hover="border-color:#2e3c49"><svg width="8" height="9" viewBox="0 0 8 9"><path d="M0 0l8 4.5L0 9z" fill="currentColor"></path></svg></button>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ r.sound }}">{{ r.soundShort }}</span>
+                  <span style="flex:none;color:#909dab">· {{ r.volume }}%</span>
+                  <sc-if value="{{ r.overlap }}" hint-placeholder-val="{{ false }}"><span style="flex:none;color:#e31837">· runs into {{ r.overlapWith }}</span></sc-if>
+                </div>
+              </div>
+              <div style="display:flex;gap:3px">
+                <sc-for list="{{ r.days }}" as="d" hint-placeholder-count="7">
+                  <span style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;background:{{ d.bg }};color:{{ d.ink }}">{{ d.l }}</span>
+                </sc-for>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px">
+                <button onClick="{{ r.toggle }}" title="{{ r.toggleTitle }}" style="flex:none;width:40px;height:22px;border:none;padding:3px;background:{{ r.swBg }};cursor:pointer;display:flex;justify-content:{{ r.swJustify }};transition:background 200ms"><span style="width:16px;height:16px;background:#fff"></span></button>
+                <button onClick="{{ r.openMenu }}" title="More" style="width:32px;height:32px;border:1px solid {{ r.menuBorder }};background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px;padding:0;transition:all 200ms" style-hover="border-color:#2e3c49"><span style="width:3px;height:3px;background:#2e3c49"></span><span style="width:3px;height:3px;background:#2e3c49"></span><span style="width:3px;height:3px;background:#2e3c49"></span></button>
+              </div>
+            </div>
+
+            <sc-if value="{{ r.menuOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;justify-content:flex-end;gap:0;padding:0 35px 14px;flex-wrap:wrap">
+                <button onClick="{{ r.edit }}" style="border:1px solid #e4e5e6;background:#fff;padding:9px 16px 7px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#2e3c49;cursor:pointer;transition:all 200ms" style-hover="border-color:#2e3c49">Edit</button>
+                <button onClick="{{ r.skip }}" style="border:1px solid #e4e5e6;border-left:none;background:#fff;padding:9px 16px 7px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#2e3c49;cursor:pointer;transition:all 200ms" style-hover="border-color:#2e3c49">{{ r.skipLabel }}</button>
+                <button onClick="{{ r.ring }}" style="border:1px solid #e4e5e6;border-left:none;background:#fff;padding:9px 16px 7px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#2e3c49;cursor:pointer;transition:all 200ms" style-hover="border-color:#2e3c49">Ring now</button>
+                <button onClick="{{ r.askDelete }}" style="border:1px solid #e4e5e6;border-left:none;background:#fff;padding:9px 16px 7px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#e31837;cursor:pointer;transition:all 200ms" style-hover="border-color:#e31837">Delete</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ r.confirmDelete }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;justify-content:flex-end;align-items:center;gap:15px;padding:0 35px 14px;font-size:14px;flex-wrap:wrap">
+                <span>Delete {{ r.time }} {{ r.label }}? This can’t be undone.</span>
+                <button onClick="{{ r.cancel }}" style="border:1px solid #e4e5e6;background:#fff;padding:9px 16px 7px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#2e3c49;cursor:pointer">Keep</button>
+                <button onClick="{{ r.remove }}" style="border:none;background:#e31837;padding:10px 16px 8px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#fff;cursor:pointer" style-hover="background:#d1132f">Delete bell</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ r.editing }}" hint-placeholder-val="{{ false }}">
+              <div style="margin:0 35px 20px;padding:25px;background:#f4f5f5;border:1px solid #e4e5e6;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:20px">
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#445c6d">Time
+                  <input type="time" value="{{ draft.time }}" onChange="{{ setTime }}" style="padding:12px 14px;border:1px solid #c9ccd0;background:#fff;font-size:16px;color:#2e3c49;border-radius:0"></input>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#445c6d;grid-column:span 2">Name
+                  <input type="text" value="{{ draft.label }}" onChange="{{ setLabel }}" style="padding:12px 14px;border:1px solid #c9ccd0;background:#fff;font-size:16px;color:#2e3c49;border-radius:0"></input>
+                </label>
+                <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#445c6d;grid-column:1 / -1">Days
+                  <div style="display:flex;gap:4px;flex-wrap:wrap">
+                    <sc-for list="{{ draftDays }}" as="d" hint-placeholder-count="7">
+                      <button onClick="{{ d.toggle }}" style="width:44px;height:44px;border:1px solid {{ d.border }};background:{{ d.bg }};color:{{ d.ink }};font-size:14px;cursor:pointer;transition:all 200ms">{{ d.l }}</button>
+                    </sc-for>
+                    <button onClick="{{ setWeekdays }}" style="height:44px;border:none;background:none;padding:0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#445c6d;cursor:pointer;text-decoration:underline">Weekdays</button>
+                  </div>
+                </div>
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#445c6d;grid-column:span 2">Sound
+                  <select value="{{ draft.sound }}" onChange="{{ setSound }}" style="padding:12px 14px;border:1px solid #c9ccd0;background:#fff;font-size:15px;color:#2e3c49;border-radius:0">
+                    <sc-for list="{{ sounds }}" as="s" hint-placeholder-count="3"><option value="{{ s.name }}">{{ s.name }} ({{ s.dur }})</option></sc-for>
+                  </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#445c6d">Volume · {{ draft.volume }}%
+                  <input type="range" min="0" max="100" step="5" value="{{ draft.volume }}" onChange="{{ setVolume }}" style="accent-color:#e31837;height:44px"></input>
+                </label>
+                <div style="grid-column:1 / -1;display:flex;gap:15px;flex-wrap:wrap;align-items:center">
+                  <x-import component-from-global-scope="Button" variant="red" small="{{ true }}" on-click="{{ saveDraft }}" hint-size="200px,50px">Save bell</x-import>
+                  <x-import component-from-global-scope="Button" variant="outlineDark" small="{{ true }}" on-click="{{ cancelDraft }}" hint-size="200px,50px">Cancel</x-import>
+                  <span style="font-size:13px;color:#e31837">{{ draftError }}</span>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </section>
+
+      <div style="display:flex;flex-direction:column;gap:20px;min-width:0">
+        <section style="position:relative;background:#fff;border:1px solid #e4e5e6;padding:30px 35px">
+          <div style="position:absolute;top:-1px;right:-1px;width:40px;height:40px;border-top:5px solid #e31837;border-right:5px solid #e31837;box-sizing:border-box"></div>
+          <h3 style="margin:0 0 15px;font-size:20px;font-weight:700">Scheduled bells<span style="color:#e31837">.</span></h3>
+          <button onClick="{{ toggleAll }}" style="display:flex;align-items:center;gap:15px;border:none;background:none;padding:0;cursor:pointer;color:#2e3c49;font-size:15px;min-height:44px">
+            <span style="flex:none;width:48px;height:26px;padding:3px;box-sizing:border-box;background:{{ allBg }};display:flex;justify-content:{{ allJustify }};transition:background 200ms"><span style="width:20px;height:20px;background:#fff"></span></span>
+            <span>{{ allLabel }}</span>
+          </button>
+          <p style="margin:12px 0 0;font-size:13px;color:#445c6d;text-wrap:pretty">Turn off for holidays and pupil-free days. To pause for the rest of today only, use Hold on the Today tab.</p>
+        </section>
+
+        <section style="background:#fff;border:1px solid #e4e5e6;padding:30px 35px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:15px;margin-bottom:20px">
+            <h3 style="margin:0;font-size:20px;font-weight:700">Sounds<span style="color:#e31837">.</span></h3>
+            <span style="font-size:13px;color:#445c6d">{{ soundCount }} files</span>
+          </div>
+          <x-import component-from-global-scope="Button" variant="outlineDark" small="{{ true }}" hint-size="200px,50px">Upload sound</x-import>
+          <div style="font-size:12px;color:#909dab;margin:8px 0 15px">WAV or MP3</div>
+          <sc-for list="{{ sounds }}" as="s" hint-placeholder-count="7">
+            <div style="display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid #e4e5e6">
+              <button onClick="{{ s.preview }}" title="Preview" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid #e4e5e6;background:{{ s.playBg }};color:{{ s.playInk }};cursor:pointer;padding:0;transition:all 200ms" style-hover="border-color:#2e3c49"><svg width="9" height="10" viewBox="0 0 8 9"><path d="M0 0l8 4.5L0 9z" fill="currentColor"></path></svg></button>
+              <div style="min-width:0">
+                <div style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ s.name }}">{{ s.short }}</div>
+                <div style="font-size:12px;color:#909dab">{{ s.dur }} · {{ s.usage }}</div>
+              </div>
+              <button onClick="{{ s.remove }}" disabled="{{ s.inUse }}" title="{{ s.removeTitle }}" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid #e4e5e6;background:#fff;color:{{ s.removeInk }};cursor:{{ s.removeCursor }};padding:0"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5"></path></svg></button>
+            </div>
+          </sc-for>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer style="background:#2e3c49;color:#909dab;border-bottom:20px solid #e31837">
+    <div style="max-width:1320px;margin:0 auto;padding:24px 20px;font-size:13px">school_bells · MUSE Python program · This page has no login. Keep it on a restricted network.</div>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const DAYS = ['M','T','W','T','F','S','S'];
+const WK = [1,1,1,1,1,0,0];
+const SOUNDS = [
+  ['file_example_MP3_700KB.wav', 42], ['sample-10s.wav', 10], ['sample-3s.wav', 3], ['sample-5s.wav', 5],
+  ['sample-6s.wav', 6], ['sample-9s.wav', 9], ['The_Emeralds_-_Chicken_Dance_mp3.pm_.wav', 165]
+];
+const INIT = [
+  ['08:45','Warning bell','file_example_MP3_700KB.wav',false],['08:50','Period 1','sample-3s.wav',true],
+  ['09:00','Lunch','file_example_MP3_700KB.wav',true],['09:45','Period 2','sample-6s.wav',true],
+  ['10:40','Recess','sample-9s.wav',true],['11:00','Period 3','sample-10s.wav',true],
+  ['12:00','Lunch','sample-10s.wav',true],['13:30','Period 4','sample-3s.wav',true],
+  ['14:00','Period 5','sample-5s.wav',true],['15:00','End of day','The_Emeralds_-_Chicken_Dance_mp3.pm_.wav',true]
+].map(([time,label,sound,on],i) => ({ id: i + 1, time, label, sound, on, days: WK.slice(), volume: 100 }));
+const pad = n => String(n).padStart(2,'0');
+const toSec = t => { const [h,m] = t.split(':').map(Number); return h*3600 + m*60; };
+const fmtDur = s => `${Math.floor(s/60)}:${pad(s%60)}`;
+const shorten = n => n.length > 30 ? n.slice(0, 18) + '…' + n.slice(-9) : n;
+
+class Component extends DCLogic {
+  state = { now: new Date(), bells: INIT, sounds: SOUNDS.map(([name,sec]) => ({ name, sec })), allOn: true,
+    menu: null, confirm: null, editing: null, draft: null, skipped: [], playing: null, err: '' };
+  componentDidMount() { this.t = setInterval(() => this.setState({ now: new Date() }), 1000); }
+  componentWillUnmount() { clearInterval(this.t); clearTimeout(this.pt); }
+  play(key, sec) {
+    clearTimeout(this.pt);
+    if (this.state.playing === key) return this.setState({ playing: null });
+    this.setState({ playing: key });
+    this.pt = setTimeout(() => this.setState({ playing: null }), Math.min(sec, 5) * 1000);
+  }
+  startEdit(b) { this.setState({ editing: b.id, draft: { ...b, days: b.days.slice() }, menu: null, confirm: null, err: '' }); }
+  upd(p) { this.setState(s => ({ draft: { ...s.draft, ...p } })); }
+  save = () => {
+    const d = this.state.draft;
+    if (!d.label.trim()) return this.setState({ err: 'Give the bell a name.' });
+    if (!d.days.some(Boolean)) return this.setState({ err: 'Pick at least one day.' });
+    if (this.state.bells.some(b => b.id !== d.id && b.time === d.time && b.days.some((x,i) => x && d.days[i]))) return this.setState({ err: `Another bell already rings at ${d.time}.` });
+    this.setState(s => {
+      const exists = s.bells.some(b => b.id === d.id);
+      const bells = (exists ? s.bells.map(b => b.id === d.id ? d : b) : [...s.bells, d]).sort((a,b) => toSec(a.time) - toSec(b.time));
+      return { bells, editing: null, draft: null, err: '' };
+    });
+  };
+  cancel = () => this.setState(s => ({ editing: null, draft: null, err: '', bells: s.bells.filter(b => !b.isNew || b.id !== s.editing) }));
+  add = () => {
+    const id = Date.now();
+    const b = { id, time: '07:00', label: 'New bell', sound: this.state.sounds[0]?.name || '', on: true, days: WK.slice(), volume: 100, isNew: true };
+    this.setState(s => ({ bells: [b, ...s.bells], editing: id, draft: { ...b, days: b.days.slice() }, menu: null, err: '' }));
+  };
+  renderVals() {
+    const { now, bells, sounds, allOn, menu, confirm, editing, draft, skipped, playing } = this.state;
+    const dow = (now.getDay() + 6) % 7;
+    const nowSec = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+    const sMap = Object.fromEntries(sounds.map(s => [s.name, s.sec]));
+    const active = bells.filter(b => b.on && !b.isNew);
+    const todays = active.filter(b => b.days[dow]).sort((a,b) => toSec(a.time) - toSec(b.time));
+    const next = allOn ? todays.find(b => toSec(b.time) > nowSec && !skipped.includes(b.id)) : null;
+    const counts = {}; bells.forEach(b => counts[b.label] = (counts[b.label] || 0) + 1);
+    const rows = bells.map((b, i) => {
+      const off = !b.on || !allOn;
+      const later = bells.slice(i + 1).find(o => o.on && toSec(o.time) > toSec(b.time));
+      const overlap = b.on && later && toSec(b.time) + (sMap[b.sound] || 0) > toSec(later.time);
+      const isNext = next && next.id === b.id, sk = skipped.includes(b.id), pk = 'b' + b.id;
+      return {
+        ...b, isNext, skipped: sk, dupe: counts[b.label] > 1,
+        soundShort: shorten(b.sound), overlap, overlapWith: later ? later.time : '',
+        ink: off ? '#909dab' : '#2e3c49',
+        accent: isNext ? '#e31837' : 'transparent',
+        bg: editing === b.id ? '#fafafa' : '#fff',
+        days: DAYS.map((l, k) => ({ l, bg: b.days[k] ? (off ? '#909dab' : '#2e3c49') : '#f4f5f5', ink: b.days[k] ? '#fff' : '#909dab' })),
+        swBg: b.on ? '#e31837' : '#c9ccd0', swJustify: b.on ? 'flex-end' : 'flex-start',
+        toggleTitle: b.on ? 'On, click to turn off' : 'Off, click to turn on',
+        toggle: () => this.setState(s => ({ bells: s.bells.map(x => x.id === b.id ? { ...x, on: !x.on } : x) })),
+        playBg: playing === pk ? '#2e3c49' : '#fff', playInk: playing === pk ? '#fff' : '#2e3c49',
+        preview: () => this.play(pk, sMap[b.sound] || 3),
+        menuOpen: menu === b.id, menuBorder: menu === b.id ? '#2e3c49' : '#e4e5e6',
+        openMenu: () => this.setState(s => ({ menu: s.menu === b.id ? null : b.id, confirm: null })),
+        edit: () => this.startEdit(b),
+        skipLabel: sk ? 'Undo skip' : 'Skip next',
+        skip: () => this.setState(s => ({ skipped: sk ? s.skipped.filter(x => x !== b.id) : [...s.skipped, b.id], menu: null })),
+        ring: () => { this.play(pk, sMap[b.sound] || 3); this.setState({ menu: null }); },
+        confirmDelete: confirm === b.id,
+        askDelete: () => this.setState({ confirm: b.id, menu: null }),
+        cancel: () => this.setState({ confirm: null }),
+        remove: () => this.setState(s => ({ bells: s.bells.filter(x => x.id !== b.id), confirm: null })),
+        editing: editing === b.id
+      };
+    });
+    const usage = n => bells.filter(b => b.sound === n).length;
+    return {
+      clock: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+      summary: `${active.length} of ${bells.filter(b => !b.isNew).length} bells on` + (next ? ` · next ${next.time} ${next.label}` : allOn ? ' · no more bells today' : ' · scheduled bells off'),
+      rows, addBell: this.add, disabledAll: !allOn,
+      draft: draft || { time: '', label: '', sound: '', volume: 100 },
+      draftDays: draft ? DAYS.map((l, k) => ({ l, bg: draft.days[k] ? '#2e3c49' : '#fff', ink: draft.days[k] ? '#fff' : '#2e3c49', border: draft.days[k] ? '#2e3c49' : '#c9ccd0',
+        toggle: () => this.upd({ days: draft.days.map((x, j) => j === k ? (x ? 0 : 1) : x) }) })) : [],
+      setWeekdays: () => this.upd({ days: WK.slice() }),
+      setTime: e => this.upd({ time: e.target.value }), setLabel: e => this.upd({ label: e.target.value }),
+      setSound: e => this.upd({ sound: e.target.value }), setVolume: e => this.upd({ volume: +e.target.value }),
+      saveDraft: this.save, cancelDraft: this.cancel, draftError: this.state.err,
+      allBg: allOn ? '#e31837' : '#c9ccd0', allJustify: allOn ? 'flex-end' : 'flex-start',
+      allLabel: allOn ? 'On. Bells ring on schedule.' : 'Off. No scheduled bells will ring.',
+      toggleAll: () => this.setState(s => ({ allOn: !s.allOn })),
+      soundCount: sounds.length,
+      sounds: sounds.map(s => {
+        const u = usage(s.name), pk = 's' + s.name;
+        return { name: s.name, short: shorten(s.name), dur: fmtDur(s.sec),
+          usage: u ? `Used by ${u} bell${u > 1 ? 's' : ''}` : 'Not used',
+          inUse: u > 0, removeInk: u ? '#c9ccd0' : '#2e3c49', removeCursor: u ? 'not-allowed' : 'pointer',
+          removeTitle: u ? 'In use. Change those bells first.' : 'Delete sound',
+          playBg: playing === pk ? '#2e3c49' : '#fff', playInk: playing === pk ? '#fff' : '#2e3c49',
+          preview: () => this.play(pk, s.sec),
+          remove: () => !u && this.setState(st => ({ sounds: st.sounds.filter(x => x.name !== s.name) })) };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

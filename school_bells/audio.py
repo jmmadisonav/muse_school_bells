@@ -13,7 +13,7 @@ from datetime import datetime
 import sounds
 
 VENDOR_ID = 0x0D8C   # C-Media
-PRODUCT_ID = 0x0014  # Unitek Y-247A USB audio adapter
+PRODUCT_ID = 0x0014  # C-Media chipset in the Nextech XC4953 USB audio adapter
 FRAMES_PER_PACKET = sounds.RATE // 1000  # one isochronous packet per 1 ms USB frame
 PACKETS_PER_TRANSFER = 32
 TRANSFERS_IN_FLIGHT = 4  # queued transfers that keep the stream from starving

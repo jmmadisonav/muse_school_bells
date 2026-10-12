@@ -32,11 +32,17 @@ MUSE programs can control it through touch points.
   program was developed on firmware with Linux 5.4 (aarch64) and Python
   3.10.13.
 - A USB audio adapter with a C-Media chipset, USB ID `0d8c:0014`, such as the
-  Unitek Y-247A. The adapter must support 48 kHz, 16-bit stereo playback.
+  Nextech USB 2.0 to 3.5mm Audio Converter (XC4953). The adapter must support
+  48 kHz, 16-bit stereo playback.
 - Internet access from the controller the first time you load the program, so
   MUSE can install the `libusb1` package listed in
   `school_bells/requirements.txt`.
 - A browser on the same network as the controller.
+
+The program has been tested on AMX MUSE firmware v1.4.118 with a Nextech USB
+2.0 to 3.5mm Audio Converter (XC4953). On Linux, tools such as `lsusb` list
+this adapter as a "Unitek Y-247A", because they name devices by USB ID rather
+than by the product you plugged in.
 
 ### Why the program drives the USB adapter directly
 
