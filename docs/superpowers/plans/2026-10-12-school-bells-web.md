@@ -2848,3 +2848,48 @@ Replaces Task 9 Step 4 (restyle) and carries Task 9 Steps 5 and 6.
 
   Expected: no matches.
 - The user then runs the spec's controller checklist.
+
+---
+
+### Task 12: Round 2 backend: time format, per-bell disable and skip, bell log
+
+Branch `bells-v2`. Spec section "Round 2 changes". Written at interface and test level; the code is in the task's commits.
+
+**Interfaces produced:**
+- `bells`:
+  - `default_state()` and `validate_settings()` gain `time_format`, defaulting to `'24h'`.
+  - Bells gain `enabled` (default `True`) and `skip_on` (default `None`).
+  - `due_bells` excludes disabled bells and skipped dates.
+  - `skipped_bells(state, now, rung)` lists the skipped rings due now.
+  - `next_occurrence(bell, now) -> ISO date | None`.
+  - `next_bell` and `ring_target` pass over disabled bells and skipped dates.
+  - `Store.set_skip(bell_id, skip, now)` returns the bell, or raises `KeyError` for an unknown id.
+- `history.History(path, log, clock=datetime.now, keep_days=30)`:
+  - `record(source, sound, result='played', label='', error='')` appends an entry.
+  - `entries(limit=1000)` returns entries newest first.
+  - `prune()` drops entries older than the retention period.
+- `scheduler.Scheduler(..., history=None)` records scheduled `played`, `failed`, and `skipped` entries.
+- `web.make_server(..., history=None)`:
+  - Records `page`, `ring_now`, and `test_tone` plays, both played and failed.
+  - Adds `GET /api/history` and `POST /api/bells/<id>/skip`.
+  - Includes `time_format` in the state and settings.
+- `touchpoints.TouchPoints(..., history=None)` records `touch_point` plays.
+- `main.py` and `tools/dev_server.py` create the `History` and pass it to each of these.
+
+**Tests:** written first and watched fail, in `test_bells`, `test_history` (new), `test_scheduler`, `test_web`, and `test_touchpoints`. Existing tests that compare whole settings dictionaries are updated for `time_format`.
+
+---
+
+### Task 13: Round 2 page: Preferences, Log, per-bell controls, time entry, footer
+
+**Requirements:** the spec's "Round 2 changes" section.
+- New Log and Preferences tabs.
+- A `fmtTime` helper used for every displayed time.
+- Hour, minute, and AM/PM dropdowns in the bell editor.
+- Skip and Undo on Today rows, plus an on/off switch and Skip next in the Schedules list.
+- The footer without the company name.
+
+**Verification:**
+- `node --check` passes on the script.
+- Headless Edge screenshots of every tab, in both 24-hour and 12-hour modes, with skipped and disabled bells and log entries seeded through the API.
+- Today still fits a 1920×950 window.

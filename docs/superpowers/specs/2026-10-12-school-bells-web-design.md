@@ -417,3 +417,65 @@ program wasn't needed.
   zone, reload the program.
 - **Reload:** reloading stops the running Python process and starts a new
   one, which frees port 8080 for the new copy.
+
+## Round 2 changes (2026-10-12)
+
+The user requested these after testing on the controller. They supersede
+earlier sections wherever the two differ.
+
+### Time format preference
+
+- **Setting:** `time_format` (`"24h"` or `"12h"`, default `"24h"`) is stored
+  in `bells.json`, returned in `GET /api/state`, and set through
+  `PUT /api/settings`. It applies to everyone.
+- **Storage stays 24-hour:** bell times are still stored as 24-hour `HH:MM`.
+  The setting changes only what the page shows and how times are entered.
+- **Display:** every time on the page follows the setting: the header clock,
+  the hero, today's schedule, the bell list, Last playback, and the log.
+  12-hour times read `1:45 pm`.
+- **Entry:** the bell editor uses hour and minute dropdowns, plus AM/PM in
+  12-hour mode, instead of the browser's time picker, which follows the
+  computer's region settings.
+- **Touch points:** values such as `next_bell` stay in 24-hour form.
+- **Preferences tab:** a new tab holds the setting.
+
+### Footer
+
+The footer no longer names Madison Group Enterprises.
+
+### Bell log
+
+- **What's recorded:** each playback attempt is appended to
+  `<data>/history.jsonl` as
+  `{"time", "source", "label", "sound", "result", "error"}`.
+  - `source` is one of `scheduled`, `ring_now`, `test_tone`, `page`, or
+    `touch_point`.
+  - `result` is one of `played`, `failed`, or `skipped`.
+- **Skipped rings:** when a skipped bell's minute arrives, the scheduler
+  records it as `skipped`, once. Disabled bells aren't recorded.
+- **Retention:** entries older than 30 days are dropped at startup and on the
+  first write of each new day. Unreadable lines are ignored.
+- **API:** `GET /api/history` returns `{"entries": [...]}`, newest first.
+- **Log tab:** a new tab lists entries grouped by day, with failures shown in
+  red.
+
+### Per-bell disable and skip
+
+- **New fields on each bell:**
+  - `enabled` (boolean, default `true`).
+  - `skip_on` (an ISO date, or `null`).
+  - `PUT /api/bells` validates both.
+- **Disable:** a disabled bell never rings and isn't counted as the next bell
+  or the Ring now target. It still counts in the clash rule.
+- **Skip next:**
+  - `POST /api/bells/<id>/skip` with `{"skip": true}` sets `skip_on` to the
+    date of the bell's next ring after the current minute.
+  - `{"skip": false}` clears it.
+  - An unknown id returns 404.
+  - The bell doesn't ring on `skip_on`. After that date, the value no longer
+    matters.
+- **Next bell and Ring now** pass over disabled bells and skipped rings.
+- **Today tab:** each upcoming row has Skip and Undo controls. Rows are tagged
+  OFF or SKIPPED.
+- **Schedules tab:** each bell has an on/off switch and Skip next or Undo
+  skip, and shows "Skipping {date}" while a skip is set.
