@@ -234,8 +234,10 @@ matching the folder name.
 - The program publishes each param when its value changes, whether the change
   came from a touch point, the web page, or the schedule. It checks for changes
   once per second.
-- At startup, the program publishes every param and then calls
-  `context.export.online()`.
+- At startup, the program publishes every param. It doesn't call
+  `context.export.online()`, because MUSE marks a running program's device
+  online by itself, and calling it during startup didn't bring the device
+  online for MUSE Automator.
 
 ## Page
 

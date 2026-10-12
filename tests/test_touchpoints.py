@@ -125,9 +125,12 @@ def test_describe_next_omits_empty_label():
     assert touchpoints.describe_next(None) == ''
 
 
-def test_start_publishes_then_goes_online(tp):
+def test_start_publishes_without_touching_online_state(tp):
+    # MUSE reports a running program's device as online by itself. Calling online()
+    # during startup isn't needed, and didn't bring the device online for Automator.
     tp.tp.start()
-    assert tp.export.calls[:7] == ['update'] * 6 + ['online']
+    assert tp.export.calls[:6] == ['update'] * 6
+    assert 'online' not in tp.export.calls and 'offline' not in tp.export.calls
 
 
 def test_set_held_holds_today_and_publishes(tp):

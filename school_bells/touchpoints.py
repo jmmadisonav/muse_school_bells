@@ -158,8 +158,7 @@ class TouchPoints:
                     self._published[name] = value
 
     def start(self):
-        self.publish()
-        self._export.online()
+        self.publish()  # MUSE marks a running program's device online itself
         threading.Thread(target=self._loop, daemon=True, name='bell-touchpoints').start()
 
     def _loop(self):
