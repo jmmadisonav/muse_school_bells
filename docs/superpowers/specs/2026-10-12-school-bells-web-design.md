@@ -409,5 +409,11 @@ program wasn't needed.
   directory up from the program folder and next to the program folders.
   Reloads don't delete it.
 - **Clock:** the controller reported `2026-10-12T12:28:42+10:00`, matching the
-  PC. UTC+10:00 is correct only for a zone without daylight saving. This is
-  still to be confirmed with the user.
+  PC. The user confirmed the zone is correct. It's a zone without daylight
+  saving, so the clock never jumps. If it did, bells would follow the
+  controller's wall-clock time. On the night clocks go back, the
+  `(bell id, date)` record stops repeats, and on the night clocks go forward,
+  bells in the skipped hour don't ring. After changing the controller's time
+  zone, reload the program.
+- **Reload:** reloading stops the running Python process and starts a new
+  one, which frees port 8080 for the new copy.
