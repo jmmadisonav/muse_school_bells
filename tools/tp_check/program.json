@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.amx.com/schema/amx-mojo-program-1.0.json",
+  ".metadata": {
+    "id": "tp_check",
+    "name": "tp_check",
+    "provider": "python",
+    "script": "main.py",
+    "disabled": false,
+    "description": "Diagnostic: reads, watches, and drives the school_bells touch points"
+  }
+}

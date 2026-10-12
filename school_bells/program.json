@@ -1,10 +1,36 @@
 {
-  "id": "school_bells",
-  "name": "school_bells",
-  "description": "description",
-  "disabled": false,
-  "provider": "python",
-  "scope": "",
-  "script": "main.py",
-  "envvars": {}
+  "$schema": "https://developer.amx.com/schema/amx-mojo-program-1.0.json",
+  ".metadata": {
+    "id": "school_bells",
+    "name": "school_bells",
+    "provider": "python",
+    "script": "main.py",
+    "disabled": false,
+    "description": "School bell scheduler: web page on port 8080, USB audio playback, and touch points"
+  },
+  "enabled": {
+    ".kind": "param", ".type": "boolean",
+    ".metadata": {"setter": "set_enabled", "desc": "Turns scheduled bells on or off"}
+  },
+  "master_volume": {
+    ".kind": "param", ".type": "integer", ".min": 0, ".max": 100,
+    ".metadata": {"setter": "set_master_volume", "desc": "Overall output level, 0 to 100"}
+  },
+  "playing": {".kind": "param", ".type": "string", ".access": "ro",
+              ".metadata": {"desc": "Sound playing now, or empty"}},
+  "next_bell": {".kind": "param", ".type": "string", ".access": "ro",
+                ".metadata": {"desc": "Next bell, such as Mon 11:00 Recess, or empty"}},
+  "last_error": {".kind": "param", ".type": "string", ".access": "ro",
+                 ".metadata": {"desc": "Latest scheduled-bell or touch-point error"}},
+  "play": {
+    ".kind": "command",
+    ".arguments": {"sound": {".type": "string"}},
+    ".metadata": {"method": "play_sound", "desc": "Plays a stored sound at the master volume"}
+  },
+  "stop": {".kind": "command", ".metadata": {"method": "stop_sound", "desc": "Stops playback"}},
+  "bell_rang": {
+    ".kind": "event",
+    ".arguments": {"id": {".type": "string"}, "label": {".type": "string"},
+                   "time": {".type": "string"}, "sound": {".type": "string"}}
+  }
 }
