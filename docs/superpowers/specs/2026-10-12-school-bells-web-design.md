@@ -386,3 +386,21 @@ confirmed its use for this internal page.
 - Multiple named timetables, term dates, and holiday calendars.
 - Playing two sounds at once.
 - Editing or trimming audio in the page.
+
+## Phase 0 results (2026-10-12)
+
+The user answered the lifecycle questions from experience, so the probe
+program wasn't needed.
+
+- **Port 8080:** reachable from the LAN. A deployed build of `school_bells`
+  answered `http://172.17.0.55:8080/` from the user's PC.
+- **Reload:** loading a program replaces its entire folder, so anything the
+  program writes inside it is lost.
+- **Reboot:** files a program writes survive a reboot.
+- **Data folder:** MUSE defines no standard path. Following the user's
+  recommendation, the program keeps its data in `school_bells_data/`, one
+  directory up from the program folder and next to the program folders.
+  Reloads don't delete it.
+- **Clock:** the controller reported `2026-10-12T12:28:42+10:00`, matching the
+  PC. UTC+10:00 is correct only for a zone without daylight saving. This is
+  still to be confirmed with the user.

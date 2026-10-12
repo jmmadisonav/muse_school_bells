@@ -16,7 +16,8 @@ import web  # noqa: E402
 
 log = context.log
 PORT = 8080
-DATA_DIR = os.path.join(HERE, 'data')  # set from the spec's Phase 0 results
+# Loading a program replaces its whole folder, so keep data in a sibling folder.
+DATA_DIR = os.path.join(os.path.dirname(HERE), 'school_bells_data')
 SOUNDS_DIR = os.path.join(DATA_DIR, 'sounds')
 os.makedirs(SOUNDS_DIR, exist_ok=True)
 TEST_TONE = os.path.join(DATA_DIR, 'test-tone.wav')  # outside SOUNDS_DIR, so it isn't listed
