@@ -1,0 +1,259 @@
+/* =========================================================
+   Madison Group Enterprises — Design Tokens
+   Source: viabrand-mge/theme/interface/scss/global/_variables.scss
+   ========================================================= */
+
+/* ---- Web fonts ---- */
+/* Licensed Hurme Geometric Sans 1 (MyFonts build 395B0C).
+   Licence is pageview-capped. For production, re-license at
+   myfonts.com. For design work, Google "Hind" (or "Montserrat")
+   is the closest free substitute. */
+@font-face {
+    font-family: 'HurmeGeometricSans1';
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+    src: url('fonts/HurmeGeometricSans1-Regular.woff2') format('woff2'),
+         url('fonts/HurmeGeometricSans1-Regular.woff') format('woff');
+}
+@font-face {
+    font-family: 'HurmeGeometricSans1';
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+    src: url('fonts/HurmeGeometricSans1-SemiBold.woff2') format('woff2'),
+         url('fonts/HurmeGeometricSans1-SemiBold.woff') format('woff');
+}
+@font-face {
+    font-family: 'HurmeGeometricSans1';
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+    src: url('fonts/HurmeGeometricSans1-Bold.woff2') format('woff2'),
+         url('fonts/HurmeGeometricSans1-Bold.woff') format('woff');
+}
+
+/* Fallback: Google Font Hind (geometric-ish sans) */
+@import url('https://fonts.googleapis.com/css2?family=Hind:wght@300;400;500;600;700&display=swap');
+
+:root {
+    /* ---- Brand colors ---- */
+    --mge-red:           #e31837;   /* signature MGE red — accents, hovers, CTAs */
+    --mge-red-dark:      #b9112c;   /* red @ -15% lightness — link hover */
+
+    --mge-dark-grey:     #2e3c49;   /* primary text, footer bg, headings */
+    --mge-grey:          #445c6d;   /* mid text, borders on dark */
+    --mge-medium-grey:   #909dab;   /* footer text, muted */
+    --mge-light-grey:    #e4e5e6;   /* panel bg, divider */
+
+    --mge-white:         #ffffff;
+    --mge-black:         #000000;
+
+    /* ---- Semantic ---- */
+    --fg-1:              var(--mge-dark-grey);   /* primary text */
+    --fg-2:              var(--mge-grey);        /* secondary text */
+    --fg-muted:          var(--mge-medium-grey); /* muted / footer */
+    --fg-on-dark:        var(--mge-white);
+
+    --bg-canvas:         var(--mge-white);
+    --bg-subtle:         var(--mge-light-grey);  /* page panels, archives */
+    --bg-inverse:        var(--mge-dark-grey);   /* footer, banners */
+
+    --accent:            var(--mge-red);
+    --accent-hover:      var(--mge-red-dark);
+    --action:            var(--mge-red);          /* links */
+
+    --border:            var(--mge-light-grey);
+    --border-strong:     var(--mge-grey);
+
+    --selection-bg:      var(--mge-red);
+    --selection-fg:      var(--mge-white);
+
+    /* ---- Typography ---- */
+    --font-sans:         'HurmeGeometricSans1', 'Hind', 'Helvetica Neue', 'Bitstream Vera Sans', Arial, sans-serif;
+    --font-body:         var(--font-sans);
+    --font-heading:      var(--font-sans);
+    --font-button:       var(--font-sans);
+
+    /* weights — note: the SCSS source sets ALL weights to 300,
+       so the brand renders with a light, uniform weight.
+       We preserve that default and expose real weights for flexibility. */
+    --fw-light:          300;
+    --fw-regular:        300;   /* brand default */
+    --fw-semibold:       300;   /* brand default (uppercase does the work) */
+    --fw-bold:           300;   /* brand default */
+
+    --fw-real-regular:   400;
+    --fw-real-semibold:  600;
+    --fw-real-bold:      700;
+
+    /* sizes — pulled from $base-font-size + $hN-font-sizes desktop values */
+    --fs-base:           15px;
+    --fs-small:          13px;
+    --fs-legal:          12px;
+    --fs-menu-top:       12px;
+    --fs-menu:           15px;
+    --fs-phone:          20px;
+
+    --fs-h1:             37px;   /* desktop */
+    --fs-h2:             37px;
+    --fs-h3:             25px;
+    --fs-h4:             22px;
+    --fs-h5:             18px;
+
+    --fs-h1-mobile:      27px;
+    --fs-h2-mobile:      27px;
+    --fs-h3-mobile:      21px;
+    --fs-h4-mobile:      18px;
+    --fs-h5-mobile:      16px;
+
+    --lh-base:           1.6;
+    --lh-heading:        1.2;
+    --lh-small:          0.8;
+
+    /* ---- Spacing ---- */
+    --space-xs:          5px;
+    --space-sm:          10px;
+    --space-md:          15px;    /* $small-spacing */
+    --space:             20px;    /* $base-spacing */
+    --space-lg:          30px;
+    --space-xl:          45px;
+    --space-2xl:         60px;    /* module padding-desktop */
+
+    --module-pad-y-desktop: 60px;
+    --module-pad-y-tablet:  30px;
+    --module-pad-y-mobile:  30px;
+
+    /* ---- Layout ---- */
+    --layout-max:        1320px;
+    --layout-pad:        20px;
+
+    /* ---- Borders ---- */
+    --radius:            0;           /* brand is square */
+    --border-width:      1px;
+    --border-base:       1px solid var(--border);
+
+    /* ---- Elevation ---- */
+    /* The brand uses a distinctive RED glow for hover states on tiles */
+    --shadow-red-glow:   0 0 7px 0 rgba(227, 24, 55, 1);
+    --shadow-header:     0 2px 4px -2px rgba(46, 60, 73, 0.4);
+
+    /* ---- Motion ---- */
+    --duration:          200ms;
+    --ease:              ease;
+
+    /* ---- Button padding ---- */
+    --btn-pad:           23px 40px 21px 25px;
+    --btn-pad-small:     18px 35px 16px 20px;
+    --btn-pad-mobile:    20px;
+    --btn-min-width:     200px;
+
+    /* ---- Banner heights ---- */
+    --banner-h:          300px;
+    --banner-compact-h:  180px;
+    --banner-large-h:    450px;
+}
+
+/* =========================================================
+   Semantic base rules
+   ========================================================= */
+
+html, body { height: 100%; }
+body {
+    margin: 0;
+    color: var(--fg-1);
+    font-family: var(--font-body);
+    font-size: var(--fs-base);
+    line-height: var(--lh-base);
+    -webkit-font-smoothing: antialiased;
+    background: var(--bg-canvas);
+}
+
+::selection            { background: var(--selection-bg); color: var(--selection-fg); }
+::-moz-selection       { background: var(--selection-bg); color: var(--selection-fg); }
+
+h1, h2, h3, h4, h5, h6 {
+    margin: 0;
+    padding: 0 0 var(--space);
+    font-family: var(--font-heading);
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-heading);
+    color: var(--fg-1);
+}
+h1 { font-size: var(--fs-h1); }
+h2 { font-size: var(--fs-h2); font-weight: var(--fw-regular); padding: var(--space) 0; }
+h3 { font-size: var(--fs-h3); font-weight: var(--fw-bold); padding: var(--space) 0; }
+h4 { font-size: var(--fs-h4); font-weight: var(--fw-bold); padding: var(--space) 0; }
+h5 { font-size: var(--fs-h5); font-weight: var(--fw-bold); padding: var(--space) 0; }
+
+@media (max-width: 1024px) {
+    h1 { font-size: var(--fs-h1-mobile); }
+    h2 { font-size: var(--fs-h2-mobile); }
+    h3 { font-size: var(--fs-h3-mobile); }
+    h4 { font-size: var(--fs-h4-mobile); }
+    h5 { font-size: var(--fs-h5-mobile); }
+}
+
+/* Signature: headings in footer / banner append a red dot */
+.mge-red-dot::after     { content: "."; color: var(--accent); }
+
+p           { margin: 0 0 var(--space); padding: 0; }
+
+a {
+    color: var(--action);
+    text-decoration: none;
+    outline: none;
+    transition: color var(--duration);
+}
+a:hover     { color: var(--accent-hover); text-decoration: underline; }
+
+/* ---- Buttons ---- */
+.mge-button {
+    position: relative;
+    display: inline-block;
+    padding: var(--btn-pad);
+    margin: 10px 0;
+    min-width: var(--btn-min-width);
+    border: none;
+    border-radius: var(--radius);
+    font-family: var(--font-button);
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-base);
+    text-transform: uppercase;
+    text-align: left;
+    text-decoration: none;
+    line-height: 100%;
+    cursor: pointer;
+    background: var(--bg-inverse);
+    color: var(--fg-on-dark);
+    transition: all var(--duration);
+}
+.mge-button::after  { content: '>'; position: absolute; top: 23px; right: 25px; }
+.mge-button.small   { padding: var(--btn-pad-small); }
+.mge-button.small::after { top: 17px; }
+
+.mge-button.bg-red            { background: var(--accent); color: var(--fg-on-dark); }
+.mge-button.bg-red:hover      { background: var(--accent-hover); color: var(--fg-on-dark); }
+.mge-button.bg-white          { background: var(--mge-white); color: var(--fg-1); }
+.mge-button.bg-white::after   { color: var(--accent); }
+.mge-button.bg-white-outline  { background: transparent; color: var(--mge-white); border: 1px solid var(--mge-white); }
+
+/* ---- Corner-accent tile pattern (signature MGE motif) ---- */
+.mge-tile                 { position: relative; padding: 20px; background: var(--mge-white); transition: box-shadow var(--duration); }
+.mge-tile:hover           { box-shadow: var(--shadow-red-glow); }
+.mge-tile.red-corner::after {
+    content: "";
+    position: absolute;
+    top: 0; right: 0;
+    width: 40px; height: 40px;
+    border-top: 5px solid var(--accent);
+    border-right: 5px solid var(--accent);
+    display: block;
+}
+
+/* ---- Layout wrapper ---- */
+.mge-layoutwidth {
+    max-width: var(--layout-max);
+    margin: 0 auto;
+    padding: 0 var(--layout-pad);
+}

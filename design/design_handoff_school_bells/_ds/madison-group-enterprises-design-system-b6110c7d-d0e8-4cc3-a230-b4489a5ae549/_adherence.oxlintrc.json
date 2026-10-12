@@ -1,0 +1,219 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "ui_kits/mge/**"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:HurmeGeometricSans1|Hind))/i]",
+        "message": "Font not provided by the design system. Available: HurmeGeometricSans1, Hind."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {},
+    "tokens": [
+      "--accent",
+      "--accent-hover",
+      "--action",
+      "--banner-compact-h",
+      "--banner-h",
+      "--banner-large-h",
+      "--bg-canvas",
+      "--bg-inverse",
+      "--bg-subtle",
+      "--border",
+      "--border-base",
+      "--border-strong",
+      "--border-width",
+      "--btn-min-width",
+      "--btn-pad",
+      "--btn-pad-mobile",
+      "--btn-pad-small",
+      "--duration",
+      "--ease",
+      "--fg-1",
+      "--fg-2",
+      "--fg-muted",
+      "--fg-on-dark",
+      "--font-body",
+      "--font-button",
+      "--font-heading",
+      "--font-sans",
+      "--fs-base",
+      "--fs-h1",
+      "--fs-h1-mobile",
+      "--fs-h2",
+      "--fs-h2-mobile",
+      "--fs-h3",
+      "--fs-h3-mobile",
+      "--fs-h4",
+      "--fs-h4-mobile",
+      "--fs-h5",
+      "--fs-h5-mobile",
+      "--fs-legal",
+      "--fs-menu",
+      "--fs-menu-top",
+      "--fs-phone",
+      "--fs-small",
+      "--fw-bold",
+      "--fw-light",
+      "--fw-real-bold",
+      "--fw-real-regular",
+      "--fw-real-semibold",
+      "--fw-regular",
+      "--fw-semibold",
+      "--layout-max",
+      "--layout-pad",
+      "--lh-base",
+      "--lh-heading",
+      "--lh-small",
+      "--mge-black",
+      "--mge-dark-grey",
+      "--mge-grey",
+      "--mge-light-grey",
+      "--mge-medium-grey",
+      "--mge-red",
+      "--mge-red-dark",
+      "--mge-white",
+      "--module-pad-y-desktop",
+      "--module-pad-y-mobile",
+      "--module-pad-y-tablet",
+      "--radius",
+      "--selection-bg",
+      "--selection-fg",
+      "--shadow-header",
+      "--shadow-red-glow",
+      "--space",
+      "--space-2xl",
+      "--space-lg",
+      "--space-md",
+      "--space-sm",
+      "--space-xl",
+      "--space-xs"
+    ],
+    "tokenKinds": {
+      "--mge-red": "color",
+      "--mge-red-dark": "color",
+      "--mge-dark-grey": "color",
+      "--mge-grey": "color",
+      "--mge-medium-grey": "color",
+      "--mge-light-grey": "color",
+      "--mge-white": "color",
+      "--mge-black": "color",
+      "--fg-1": "color",
+      "--fg-2": "color",
+      "--fg-muted": "color",
+      "--fg-on-dark": "color",
+      "--bg-canvas": "color",
+      "--bg-subtle": "color",
+      "--bg-inverse": "color",
+      "--accent": "color",
+      "--accent-hover": "color",
+      "--action": "color",
+      "--border": "color",
+      "--border-strong": "color",
+      "--selection-bg": "color",
+      "--selection-fg": "color",
+      "--font-sans": "font",
+      "--font-body": "font",
+      "--font-heading": "font",
+      "--font-button": "font",
+      "--fw-light": "other",
+      "--fw-regular": "other",
+      "--fw-semibold": "other",
+      "--fw-bold": "other",
+      "--fw-real-regular": "other",
+      "--fw-real-semibold": "other",
+      "--fw-real-bold": "other",
+      "--fs-base": "spacing",
+      "--fs-small": "spacing",
+      "--fs-legal": "spacing",
+      "--fs-menu-top": "spacing",
+      "--fs-menu": "spacing",
+      "--fs-phone": "spacing",
+      "--fs-h1": "spacing",
+      "--fs-h2": "spacing",
+      "--fs-h3": "spacing",
+      "--fs-h4": "spacing",
+      "--fs-h5": "spacing",
+      "--fs-h1-mobile": "spacing",
+      "--fs-h2-mobile": "spacing",
+      "--fs-h3-mobile": "spacing",
+      "--fs-h4-mobile": "spacing",
+      "--fs-h5-mobile": "spacing",
+      "--lh-base": "other",
+      "--lh-heading": "other",
+      "--lh-small": "other",
+      "--space-xs": "spacing",
+      "--space-sm": "spacing",
+      "--space-md": "spacing",
+      "--space": "spacing",
+      "--space-lg": "spacing",
+      "--space-xl": "spacing",
+      "--space-2xl": "spacing",
+      "--module-pad-y-desktop": "spacing",
+      "--module-pad-y-tablet": "spacing",
+      "--module-pad-y-mobile": "spacing",
+      "--layout-max": "spacing",
+      "--layout-pad": "spacing",
+      "--radius": "radius",
+      "--border-width": "spacing",
+      "--border-base": "color",
+      "--shadow-red-glow": "shadow",
+      "--shadow-header": "shadow",
+      "--duration": "other",
+      "--ease": "other",
+      "--btn-pad": "spacing",
+      "--btn-pad-small": "spacing",
+      "--btn-pad-mobile": "spacing",
+      "--btn-min-width": "spacing",
+      "--banner-h": "spacing",
+      "--banner-compact-h": "spacing",
+      "--banner-large-h": "spacing"
+    },
+    "fontFamilies": [
+      "Hind",
+      "HurmeGeometricSans1"
+    ]
+  }
+}

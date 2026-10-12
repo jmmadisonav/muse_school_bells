@@ -3,92 +3,319 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>School Bells</title>
+<title>School bells</title>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 960px; padding: 16px; }
+  @font-face { font-family: 'HurmeGeometricSans1'; font-weight: 400; font-style: normal; font-display: swap;
+    src: url('/static/fonts/HurmeGeometricSans1-Regular.woff2') format('woff2'); }
+  @font-face { font-family: 'HurmeGeometricSans1'; font-weight: 600; font-style: normal; font-display: swap;
+    src: url('/static/fonts/HurmeGeometricSans1-SemiBold.woff2') format('woff2'); }
+  @font-face { font-family: 'HurmeGeometricSans1'; font-weight: 700; font-style: normal; font-display: swap;
+    src: url('/static/fonts/HurmeGeometricSans1-Bold.woff2') format('woff2'); }
+
+  :root {
+    --red: #e31837; --red-hover: #d01632; --dark: #2e3c49; --grey: #445c6d;
+    --muted: #909dab; --light: #e4e5e6; --white: #ffffff; --tint: #fff4f5;
+    --font: 'HurmeGeometricSans1', 'Hind', 'Helvetica Neue', Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  .bell-row, .sound-row, .bell-editor { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0; }
-  .missing { color: #b00020; }
-  #error-banner { background: #fde7e9; color: #b00020; padding: 8px 12px; }
+  body { margin: 0; background: var(--white); color: var(--dark); font-family: var(--font);
+    font-size: 15px; line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 0 20px; width: 100%; }
+  .dot { color: var(--red); }
+  a { color: var(--dark); transition: color 200ms; }
+  a:hover { color: #1a232b; text-decoration: underline; }
+
+  /* Header */
+  .site-header { background: var(--white); box-shadow: 0 2px 4px -2px rgba(46, 60, 73, 0.4); position: relative; z-index: 1; }
+  .topbar { min-height: 80px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 15px; flex-wrap: wrap; }
+  .brand-name { font-size: 24px; font-weight: 600; letter-spacing: .01em; }
+  .brand-sub { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .status { display: flex; align-items: center; gap: 20px; font-size: 13px; }
+  .indicator { display: flex; align-items: center; gap: 8px; }
+  .indicator i { width: 8px; height: 8px; background: var(--red); }
+  .indicator.quiet i { background: var(--muted); }
+  .clock { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .tabs { background: var(--dark); height: 50px; }
+  .tabs .wrap { height: 100%; display: flex; align-items: center; gap: 30px; font-size: 13px;
+    text-transform: uppercase; letter-spacing: .08em; overflow-x: auto; }
+  .tabs a { color: var(--muted); text-decoration: none; padding: 13px 0 10px; border-bottom: 3px solid transparent; white-space: nowrap; }
+  .tabs a:hover { color: var(--white); text-decoration: none; }
+  .tabs a[aria-current="page"] { color: var(--white); border-bottom-color: var(--red); }
+
+  /* Error banner */
+  .banner { background: var(--white); border-bottom: 1px solid var(--light); }
+  .banner .wrap { display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    border-left: 5px solid var(--red); padding-top: 12px; padding-bottom: 12px; }
+  .banner button { background: none; border: none; font: inherit; font-size: 18px; color: var(--grey); cursor: pointer; }
+
+  /* Hero */
+  .hero { background: var(--dark); color: var(--white); }
+  .hero .wrap { padding-top: 60px; padding-bottom: 60px; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 40px; align-items: end; }
+  .eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+  .hero-time { font-size: clamp(56px, 9vw, 112px); line-height: 1; font-weight: 600; margin: 15px 0 10px;
+    font-variant-numeric: tabular-nums; }
+  .hero-label { font-size: 22px; }
+  .hero-countdown { margin-top: 6px; color: var(--muted); }
+  .hero-actions { display: flex; flex-direction: column; gap: 15px; align-items: flex-start; }
+  .ringing { display: flex; align-items: center; gap: 12px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+  .ringing i { width: 10px; height: 10px; background: var(--red); box-shadow: 0 0 7px 0 rgba(227, 24, 55, 1); }
+  .buttons { display: flex; gap: 15px; flex-wrap: wrap; }
+  .note { font-size: 13px; color: var(--muted); }
+
+  /* Panels */
+  main { flex: 1; background: var(--light); }
+  .grid { padding-top: 60px; padding-bottom: 60px; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 20px; align-items: start; }
+  .stack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .panel { position: relative; background: var(--white); border: 1px solid var(--light); padding: 35px; min-width: 0; }
+  .panel.wide { grid-column: span 2; }
+  @media (max-width: 820px) { .panel.wide { grid-column: auto; } }
+  .corner::before { content: ''; position: absolute; top: 0; right: 0; width: 40px; height: 40px;
+    border-top: 5px solid var(--red); border-right: 5px solid var(--red); }
+  h2 { margin: 0; font-size: 26px; font-weight: 400; line-height: 1.3; }
+  h3 { margin: 0 0 15px; font-size: 20px; font-weight: 700; line-height: 1.3; }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; }
+  .meta { font-size: 13px; color: var(--grey); }
+  .kv { display: grid; grid-template-columns: 1fr auto; row-gap: 8px; column-gap: 20px; font-size: 14px; }
+  .kv > :nth-child(odd) { color: var(--grey); }
+  .kv > :nth-child(even) { text-align: right; }
+  .panel-foot { margin-top: 25px; }
+  .muted-line { color: var(--muted); font-size: 14px; margin: -8px 0 15px; }
+
+  /* Schedule rows */
+  .row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 20px; align-items: center;
+    padding: 14px 15px; border-top: 1px solid var(--light); }
+  .row .t { font-size: 17px; font-variant-numeric: tabular-nums; }
+  .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .row.rung { color: var(--muted); }
+  .row.next { background: var(--tint); }
+  .row.next .tag { color: var(--red); }
+  .row .sub { font-size: 13px; color: var(--grey); }
+  .row.missing .sub { color: var(--red); }
+  .row-actions { display: flex; gap: 8px; }
+  .empty { border-top: 1px solid var(--light); padding: 14px 15px; color: var(--muted); }
+
+  /* Buttons (MGE button, rebuilt in CSS) */
+  .btn { position: relative; display: inline-block; padding: 22px 46px 20px 26px; min-width: 200px; border: none;
+    border-radius: 0; font-family: var(--font); font-weight: 700; font-size: 14px; text-transform: uppercase;
+    text-align: left; line-height: 1; letter-spacing: .06em; cursor: pointer; transition: all 200ms;
+    background: var(--dark); color: var(--white); }
+  .btn::after { content: '\203A'; position: absolute; right: 22px; top: 20px; }
+  .btn.small { padding: 18px 40px 16px 22px; }
+  .btn.small::after { right: 18px; top: 16px; }
+  .btn.red { background: var(--red); color: var(--white); }
+  .btn.red:hover:not(:disabled) { background: var(--red-hover); }
+  .btn.outline-white { background: transparent; color: var(--white); border: 1px solid var(--white); }
+  .btn.outline-white:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+  .btn.outline-dark { background: transparent; color: var(--dark); border: 1px solid var(--dark); }
+  .btn.outline-dark::after, .btn.white::after { color: var(--red); }
+  .btn.outline-dark:hover:not(:disabled) { background: var(--dark); color: var(--white); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .icon-btn { width: 36px; height: 36px; border: 1px solid var(--light); background: var(--white); color: var(--dark);
+    border-radius: 0; font: inherit; font-size: 14px; cursor: pointer; transition: all 200ms; }
+  .icon-btn:hover { border-color: var(--dark); }
+
+  /* Forms */
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field > span, .days > span { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--grey); }
+  input[type="time"], input[type="text"], select { font: inherit; color: var(--dark); border: 1px solid var(--light);
+    border-radius: 0; background: var(--white); padding: 9px 10px; min-height: 42px; }
+  input[type="range"] { accent-color: var(--red); width: 100%; }
+  .editor { border-top: 1px solid var(--light); background: var(--tint); padding: 20px 15px; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 15px; align-items: end; }
+  .editor .days, .editor .actions { grid-column: 1 / -1; }
+  .days { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .days span { width: 100%; }
+  .chip { position: relative; }
+  .chip input { position: absolute; opacity: 0; }
+  .chip b { display: inline-block; min-width: 46px; text-align: center; padding: 7px 8px; border: 1px solid var(--light);
+    font-weight: 400; font-size: 13px; background: var(--white); cursor: pointer; transition: all 200ms; }
+  .chip input:checked + b { background: var(--dark); color: var(--white); border-color: var(--dark); }
+  .chip input:focus-visible + b { outline: 2px solid var(--red); }
+  .actions { display: flex; gap: 15px; flex-wrap: wrap; }
+  .switch { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+  .switch input { width: 20px; height: 20px; accent-color: var(--red); }
+  .volume-row { display: flex; align-items: center; gap: 15px; margin-bottom: 25px; }
+  .volume-row output { font-size: 20px; min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
+  .upload-status { font-size: 13px; color: var(--grey); margin-left: 15px; }
+  table.tp { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.tp td { border-top: 1px solid var(--light); padding: 8px 0; vertical-align: top; }
+  table.tp td:first-child { font-family: Consolas, monospace; padding-right: 15px; white-space: nowrap; }
+  table.tp td:nth-child(2) { color: var(--grey); padding-right: 15px; white-space: nowrap; }
+
+  /* Footer */
+  .site-footer { background: var(--dark); color: var(--muted); border-bottom: 20px solid var(--red); }
+  .site-footer .wrap { padding-top: 30px; padding-bottom: 30px; display: flex; justify-content: space-between;
+    gap: 20px; flex-wrap: wrap; font-size: 13px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>School Bells</h1>
-  <p>Controller time: <span id="clock">—</span></p>
-  <label><input type="checkbox" id="enabled"> Bells enabled</label>
-  <label>Master volume <input type="range" id="master-volume" min="0" max="100">
-    <span id="master-volume-value"></span>%</label>
-  <button id="stop" type="button">Stop</button>
-  <span id="now-playing" hidden></span>
+<header class="site-header">
+  <div class="wrap topbar">
+    <div class="brand">
+      <div class="brand-name">School bells<span class="dot">.</span></div>
+      <div class="brand-sub">MUSE controller</div>
+    </div>
+    <div class="status">
+      <div class="indicator" id="indicator"><i></i><span id="indicator-label">Connecting…</span></div>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+  </div>
+  <nav class="tabs" aria-label="Sections">
+    <div class="wrap">
+      <a href="#today" data-tab="today">Today</a>
+      <a href="#schedules" data-tab="schedules">Schedules</a>
+      <a href="#device" data-tab="device">Device</a>
+    </div>
+  </nav>
 </header>
-<div id="error-banner" role="alert" hidden>
-  <span data-field="message"></span>
-  <button id="error-close" type="button" aria-label="Dismiss">✕</button>
-</div>
-<section><p id="next-bell"></p></section>
-<section>
-  <h2>Bells</h2>
-  <button id="add-bell" type="button">+ Add bell</button>
-  <div id="bell-list"></div>
-</section>
-<section>
-  <h2>Sounds</h2>
-  <input type="file" id="upload-input" accept="audio/*" hidden>
-  <button id="upload-button" type="button">Upload sound</button>
-  <span id="upload-status"></span>
-  <div id="sound-list"></div>
-</section>
-<footer>This page has no login. Keep it on a restricted network.</footer>
 
-<template id="bell-row">
-  <div class="bell-row">
-    <span data-field="time"></span>
-    <span data-field="label"></span>
-    <span data-field="days"></span>
-    <span data-field="sound"></span>
-    <span data-field="volume"></span>
-    <button type="button" data-action="play" aria-label="Play">▶</button>
-    <button type="button" data-action="edit" aria-label="Edit">✎</button>
-    <button type="button" data-action="delete" aria-label="Delete">✕</button>
+<div class="banner" id="error-banner" role="alert" hidden>
+  <div class="wrap"><span id="error-message"></span>
+    <button type="button" id="error-close" aria-label="Dismiss">✕</button></div>
+</div>
+
+<!-- Today -->
+<div data-page="today">
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <div class="eyebrow" id="hero-eyebrow">Next bell</div>
+        <div class="hero-time" id="hero-time">--:--</div>
+        <div class="hero-label"><span id="hero-label"></span><span class="dot">.</span></div>
+        <div class="hero-countdown" id="hero-countdown"></div>
+      </div>
+      <div class="hero-actions">
+        <div class="ringing" id="ringing" hidden><i></i><span id="ringing-label"></span></div>
+        <div class="buttons">
+          <button type="button" class="btn red" id="ring-now">Ring now</button>
+          <button type="button" class="btn outline-white" id="hold">Hold bells</button>
+        </div>
+        <div class="note" id="hold-note">Hold pauses scheduled bells for the rest of today.</div>
+      </div>
+    </div>
+  </section>
+  <main>
+    <div class="wrap grid">
+      <div class="panel wide">
+        <div class="panel-head">
+          <h2>Today’s schedule<span class="dot">.</span></h2>
+          <div class="meta" id="today-meta"></div>
+        </div>
+        <div class="muted-line" id="today-off" hidden>Bells are switched off. Turn them on in Schedules.</div>
+        <div id="today-rows"></div>
+      </div>
+      <div class="stack">
+        <div class="panel corner">
+          <h3>Bell tone<span class="dot">.</span></h3>
+          <div class="kv">
+            <span>Frequency</span><span>1000 Hz</span>
+            <span>Duration</span><span>3 s</span>
+            <span>Level</span><span>−12 dBFS</span>
+          </div>
+          <div class="panel-foot"><button type="button" class="btn outline-dark small" id="test-tone">Play test tone</button></div>
+        </div>
+        <div class="panel" data-adapter-panel></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Schedules -->
+<div data-page="schedules" hidden>
+  <main>
+    <div class="wrap grid">
+      <div class="panel wide corner">
+        <div class="panel-head">
+          <h2>Bells<span class="dot">.</span></h2>
+          <button type="button" class="btn red small" id="add-bell">Add bell</button>
+        </div>
+        <div id="bell-list"></div>
+      </div>
+      <div class="stack">
+        <div class="panel">
+          <h3>Bells enabled<span class="dot">.</span></h3>
+          <label class="switch"><input type="checkbox" id="enabled"> <span>Ring scheduled bells</span></label>
+          <p class="note" style="margin:15px 0 0">Turn off for holidays. Hold, on the Today tab, pauses only the rest of today.</p>
+        </div>
+        <div class="panel">
+          <h3>Sounds<span class="dot">.</span></h3>
+          <input type="file" id="upload-input" accept="audio/*" hidden>
+          <div><button type="button" class="btn outline-dark small" id="upload-button">Upload sound</button><span class="upload-status" id="upload-status"></span></div>
+          <div id="sound-list" style="margin-top:20px"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Device -->
+<div data-page="device" hidden>
+  <main>
+    <div class="wrap grid">
+      <div class="panel corner">
+        <h3>Volume<span class="dot">.</span></h3>
+        <div class="volume-row">
+          <input type="range" id="master-volume" min="0" max="100" aria-label="Master volume">
+          <output id="master-volume-value"></output>
+        </div>
+        <button type="button" class="btn outline-dark small" id="stop">Stop playback</button>
+      </div>
+      <div class="panel" data-adapter-panel></div>
+      <div class="panel">
+        <h3>Touch points<span class="dot">.</span></h3>
+        <p class="note" style="margin:0 0 15px">Other MUSE programs reach this program with <code>context.devices.get('school_bells')</code>.</p>
+        <table class="tp">
+          <tr><td>enabled</td><td>param</td><td>Scheduled bells on or off</td></tr>
+          <tr><td>master_volume</td><td>param</td><td>Output level, 0 to 100</td></tr>
+          <tr><td>held</td><td>param</td><td>Hold bells for the rest of today</td></tr>
+          <tr><td>playing</td><td>read-only</td><td>Sound playing now, or empty</td></tr>
+          <tr><td>next_bell</td><td>read-only</td><td>Next bell, such as Mon 11:00 Recess</td></tr>
+          <tr><td>last_error</td><td>read-only</td><td>Latest bell or command error</td></tr>
+          <tr><td>play(sound)</td><td>command</td><td>Play a stored sound</td></tr>
+          <tr><td>stop()</td><td>command</td><td>Stop playback</td></tr>
+          <tr><td>bell_rang</td><td>event</td><td>id, label, time, sound</td></tr>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>school_bells · MUSE Python program<br>This page has no login. Keep it on a restricted network.</span>
+    <span>Madison Group Enterprises</span>
   </div>
-</template>
-<template id="bell-editor">
-  <form class="bell-editor">
-    <input name="time" type="time" required>
-    <input name="label" type="text" maxlength="60" placeholder="Label">
-    <label><input type="checkbox" name="day" value="mon">Mon</label>
-    <label><input type="checkbox" name="day" value="tue">Tue</label>
-    <label><input type="checkbox" name="day" value="wed">Wed</label>
-    <label><input type="checkbox" name="day" value="thu">Thu</label>
-    <label><input type="checkbox" name="day" value="fri">Fri</label>
-    <label><input type="checkbox" name="day" value="sat">Sat</label>
-    <label><input type="checkbox" name="day" value="sun">Sun</label>
-    <select name="sound" required></select>
-    <input name="volume" type="range" min="0" max="100">
-    <span><span data-field="volume-value"></span>%</span>
-    <button type="submit" data-action="save">Save</button>
-    <button type="button" data-action="cancel">Cancel</button>
-  </form>
-</template>
-<template id="sound-row">
-  <div class="sound-row">
-    <span data-field="name"></span>
-    <span data-field="duration"></span>
-    <button type="button" data-action="play">▶ Play</button>
-    <button type="button" data-action="delete" aria-label="Delete">✕</button>
-  </div>
-</template>
+</footer>
 
 <script>
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const $ = (selector, root = document) => root.querySelector(selector);
+const pad = (n) => String(n).padStart(2, '0');
 
 let state = null;
 let editingId = null;  // id of the bell being edited, 'new' for a new bell, or null
 let clockBase = null;  // { serverMs, localMs, offsetMs } from the latest state
+
+// Builds an element without innerHTML, so labels and names can't inject markup.
+function h(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key.startsWith('on')) node[key] = value;
+    else if (key === 'class') node.className = value;
+    else node.setAttribute(key, value);
+  }
+  for (const child of children.flat()) {
+    if (child !== null && child !== undefined && child !== false) node.append(child);
+  }
+  return node;
+}
 
 async function api(method, path, body, contentType) {
   const options = { method, headers: {} };
@@ -107,7 +334,7 @@ async function api(method, path, body, contentType) {
 }
 
 function showError(message) {
-  $('#error-banner [data-field=message]').textContent = message;
+  $('#error-message').textContent = message;
   $('#error-banner').hidden = false;
 }
 
@@ -134,84 +361,197 @@ function controllerNow() {
   return new Date(clockBase.serverMs + (Date.now() - clockBase.localMs) + clockBase.offsetMs);
 }
 
-function dayName(day) {
-  return day[0].toUpperCase() + day.slice(1);
+const weekdayIndex = (date) => (date.getUTCDay() + 6) % 7;
+const isoDate = (date) => date.toISOString().slice(0, 10);
+const hhmm = (date) => date.toISOString().slice(11, 16);
+
+function dateFromIso(iso, time = '00:00') {
+  const [y, m, d] = iso.split('-').map(Number);
+  const [hh, mm] = time.split(':').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, hh, mm));
 }
 
-function renderClock() {
-  if (!clockBase) return;
-  const now = controllerNow();
-  $('#clock').textContent = `${dayName(DAYS[(now.getUTCDay() + 6) % 7])} ${now.toISOString().slice(11, 19)}`;
-  renderNextBell(now);
+// ---- Tabs ----
+function showTab() {
+  const tab = (location.hash || '#today').slice(1);
+  const known = ['today', 'schedules', 'device'].includes(tab) ? tab : 'today';
+  document.querySelectorAll('[data-page]').forEach((page) => { page.hidden = page.dataset.page !== known; });
+  document.querySelectorAll('[data-tab]').forEach((link) => {
+    if (link.dataset.tab === known) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  });
 }
 
-function renderNextBell(now) {
-  const next = state.next_bell;
-  if (!next) {
-    $('#next-bell').textContent = state.enabled ? 'No bells scheduled' : 'Bells are off';
-    return;
-  }
-  const [y, m, d] = next.date.split('-').map(Number);
-  const [hh, mm] = next.time.split(':').map(Number);
-  const minutes = Math.ceil((Date.UTC(y, m - 1, d, hh, mm) - now.getTime()) / 60000);
-  let when;
-  if (minutes < 60) when = `in ${minutes} min`;
-  else if (minutes < 24 * 60) when = `in ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
-  else when = `on ${dayName(DAYS[(new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7])}`;
-  $('#next-bell').textContent = `Next bell: ${next.time} ${next.label} — ${when}`;
-}
-
+// ---- Rendering ----
 function render() {
+  renderTick();
+  renderHeroControls();
+  renderAdapterPanels();
+  if (editingId === null) renderBells();
+  renderSounds();
   $('#enabled').checked = state.enabled;
   if (document.activeElement !== $('#master-volume')) {
     $('#master-volume').value = state.master_volume;
-    $('#master-volume-value').textContent = state.master_volume;
+    $('#master-volume-value').textContent = `${state.master_volume}%`;
   }
-  $('#now-playing').hidden = !state.playing;
-  $('#now-playing').textContent = state.playing ? `Now playing: ${state.playing}` : '';
   $('#stop').disabled = !state.playing;
-  renderClock();
-  if (editingId === null) renderBells();
-  renderSounds();
 }
 
-function fill(templateSelector, fields) {
-  const node = $(templateSelector).content.firstElementChild.cloneNode(true);
-  for (const [name, value] of Object.entries(fields)) {
-    const element = node.querySelector(`[data-field="${name}"]`);
-    if (element) element.textContent = value;
+// Everything that changes with the clock; runs every second.
+function renderTick() {
+  if (!clockBase) return;
+  const now = controllerNow();
+  $('#clock').textContent = now.toISOString().slice(11, 19);
+  renderIndicator();
+  renderHero(now);
+  renderToday(now);
+}
+
+function renderIndicator() {
+  let label = 'Adapter connected';
+  let quiet = false;
+  if (state.playing) label = 'Ringing';
+  else if (state.held) { label = 'Bells held'; quiet = true; }
+  else if (!state.adapter.connected) { label = 'Adapter not found'; quiet = true; }
+  $('#indicator-label').textContent = label;
+  $('#indicator').classList.toggle('quiet', quiet);
+}
+
+function renderHero(now) {
+  const today = isoDate(now);
+  const dayLabel = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    .toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  $('#hero-eyebrow').textContent = `Next bell · ${dayLabel}`;
+  const next = state.next_bell;
+  if (!next) {
+    $('#hero-time').textContent = '--:--';
+    $('#hero-label').textContent = state.enabled ? 'No bells scheduled' : 'Bells are switched off';
+    $('#hero-countdown').textContent = '';
+    return;
   }
-  return node;
+  $('#hero-time').textContent = next.time;
+  if (next.date === today) {
+    $('#hero-label').textContent = next.label || 'Bell';
+    const seconds = Math.max(0, Math.round((dateFromIso(next.date, next.time) - now) / 1000));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    $('#hero-countdown').textContent = hours
+      ? `In ${hours} h ${pad(minutes)} min`
+      : `In ${minutes} min ${pad(seconds % 60)} s`;
+  } else {
+    const tomorrow = isoDate(new Date(now.getTime() + 86400000));
+    const when = next.date === tomorrow ? 'tomorrow' : `on ${DAY_NAMES[weekdayIndex(dateFromIso(next.date))]}`;
+    $('#hero-label').textContent = `${next.label || 'Bell'} ${when}`;
+    $('#hero-countdown').textContent = state.held ? 'Bells held for the rest of today' : 'All bells done for today';
+  }
+}
+
+function renderHeroControls() {
+  $('#ringing').hidden = !state.playing;
+  $('#ringing-label').textContent = state.playing ? `Ringing · ${state.playing}` : '';
+  $('#ring-now').disabled = !state.ring_target || Boolean(state.playing);
+  $('#ring-now').title = state.ring_target ? `Plays ${state.ring_target.label || state.ring_target.time}` : 'No bells scheduled';
+  $('#test-tone').disabled = Boolean(state.playing);
+  $('#hold').textContent = state.held ? 'Resume bells' : 'Hold bells';
+  $('#hold-note').textContent = state.held
+    ? 'Scheduled bells are paused until midnight.'
+    : 'Hold pauses scheduled bells for the rest of today.';
+}
+
+function renderToday(now) {
+  const day = DAYS[weekdayIndex(now)];
+  const current = hhmm(now);
+  const todays = state.bells.filter((bell) => bell.days.includes(day));
+  $('#today-meta').textContent = `Weekday timetable · ${todays.length} ${todays.length === 1 ? 'bell' : 'bells'}`;
+  $('#today-off').hidden = state.enabled;
+  if (!todays.length) {
+    $('#today-rows').replaceChildren(h('div', { class: 'empty' }, 'No bells today.'));
+    return;
+  }
+  const active = state.enabled && !state.held;
+  const nextIndex = active ? todays.findIndex((bell) => bell.time > current) : -1;
+  $('#today-rows').replaceChildren(...todays.map((bell, i) => {
+    const rung = bell.time <= current;
+    const isNext = i === nextIndex;
+    const tag = state.held && !rung ? 'Held' : isNext ? 'Next' : rung ? 'Rung' : '';
+    return h('div', { class: `row${rung ? ' rung' : ''}${isNext ? ' next' : ''}` },
+      h('div', { class: 't' }, bell.time),
+      h('div', {}, bell.label || '—'),
+      h('div', { class: 'tag' }, tag));
+  }));
+}
+
+function lastPlaybackText(last) {
+  if (!last) return 'None yet';
+  const today = clockBase ? isoDate(controllerNow()) : '';
+  const [date, time] = last.time.split('T');
+  const when = date === today ? `Today ${time.slice(0, 5)}` : `${date} ${time.slice(0, 5)}`;
+  const n = last.failed_transfers;
+  return `${when} · ${n} failed ${n === 1 ? 'transfer' : 'transfers'}`;
+}
+
+function renderAdapterPanels() {
+  const rows = [
+    ['Status', state.adapter.connected ? 'Connected' : 'Not found'],
+    ['USB ID', '0d8c:0014'],
+    ['Format', '48 kHz · 2 ch · 16-bit'],
+    ['Endpoint', '0x01 · alt 1'],
+    ['Last playback', lastPlaybackText(state.adapter.last_playback)],
+  ];
+  document.querySelectorAll('[data-adapter-panel]').forEach((panel) => {
+    panel.replaceChildren(
+      h('h3', {}, 'Audio adapter', h('span', { class: 'dot' }, '.')),
+      h('div', { style: 'font-size:14px;margin-bottom:12px' }, 'Unitek Y-247A USB audio'),
+      h('div', { class: 'kv' }, rows.flatMap(([key, value]) => [h('span', {}, key), h('span', {}, value)])));
+  });
+}
+
+// ---- Schedules: bells ----
+function daysText(days) {
+  return DAYS.map((day, i) => (days.includes(day) ? DAY_LETTERS[i] : '·')).join(' ');
 }
 
 function makeBellRow(bell) {
-  const row = fill('#bell-row', {
-    time: bell.time,
-    label: bell.label,
-    days: DAYS.map((day, i) => (bell.days.includes(day) ? DAY_LETTERS[i] : '·')).join(' '),
-    sound: bell.missing_sound ? `${bell.sound} (missing)` : bell.sound,
-    volume: `${bell.volume}%`,
-  });
-  row.classList.toggle('missing', bell.missing_sound);
-  row.querySelector('[data-action=play]').onclick = () => run(() => play(bell.sound, bell.volume));
-  row.querySelector('[data-action=edit]').onclick = () => openEditor(bell.id);
-  row.querySelector('[data-action=delete]').onclick = () => run(() => deleteBell(bell));
-  return row;
+  const sound = bell.missing_sound ? `${bell.sound} (missing)` : bell.sound;
+  return h('div', { class: `row${bell.missing_sound ? ' missing' : ''}` },
+    h('div', { class: 't' }, bell.time),
+    h('div', {},
+      h('div', {}, bell.label || '—'),
+      h('div', { class: 'sub' }, `${daysText(bell.days)}  ·  ${sound}  ·  ${bell.volume}%`)),
+    h('div', { class: 'row-actions' },
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Play', title: 'Play',
+        onclick: () => run(() => play(bell.sound, bell.volume)) }, '▶'),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Edit', title: 'Edit',
+        onclick: () => openEditor(bell.id) }, '✎'),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Delete', title: 'Delete',
+        onclick: () => run(() => deleteBell(bell)) }, '✕')));
 }
 
 function makeEditor(bell) {
-  const form = $('#bell-editor').content.firstElementChild.cloneNode(true);
   const draft = bell || { label: '', time: '08:00', days: DAYS.slice(0, 5), sound: '', volume: 100 };
+  const volumeValue = h('output', {}, `${draft.volume}%`);
+  const form = h('form', { class: 'editor' },
+    h('label', { class: 'field' }, h('span', {}, 'Time'), h('input', { name: 'time', type: 'time', required: '' })),
+    h('label', { class: 'field' }, h('span', {}, 'Label'),
+      h('input', { name: 'label', type: 'text', maxlength: '60', placeholder: 'Recess' })),
+    h('label', { class: 'field' }, h('span', {}, 'Sound'), h('select', { name: 'sound', required: '' },
+      state.sounds.map((s) => new Option(s.name, s.name, false, s.name === draft.sound)))),
+    h('label', { class: 'field' }, h('span', {}, 'Volume'),
+      h('div', { style: 'display:flex;gap:10px;align-items:center' },
+        h('input', { name: 'volume', type: 'range', min: '0', max: '100' }), volumeValue)),
+    h('div', { class: 'days' }, h('span', {}, 'Days'),
+      DAYS.map((day, i) => h('label', { class: 'chip' },
+        h('input', { type: 'checkbox', name: 'day', value: day }),
+        h('b', {}, DAY_NAMES[i].slice(0, 3))))),
+    h('div', { class: 'actions' },
+      h('button', { type: 'submit', class: 'btn red small' }, 'Save bell'),
+      h('button', { type: 'button', class: 'btn outline-dark small',
+        onclick: () => { editingId = null; renderBells(); } }, 'Cancel')));
   form.elements.time.value = draft.time;
   form.elements.label.value = draft.label;
-  form.querySelectorAll('input[name=day]').forEach((box) => { box.checked = draft.days.includes(box.value); });
-  const select = form.elements.sound;
-  select.replaceChildren(...state.sounds.map((s) => new Option(s.name, s.name, false, s.name === draft.sound)));
-  const volumeValue = form.querySelector('[data-field=volume-value]');
   form.elements.volume.value = draft.volume;
-  volumeValue.textContent = draft.volume;
-  form.elements.volume.oninput = () => { volumeValue.textContent = form.elements.volume.value; };
-  form.querySelector('[data-action=cancel]').onclick = () => { editingId = null; renderBells(); };
+  form.elements.volume.oninput = () => { volumeValue.textContent = `${form.elements.volume.value}%`; };
+  form.querySelectorAll('input[name=day]').forEach((box) => { box.checked = draft.days.includes(box.value); });
   form.onsubmit = (event) => {
     event.preventDefault();
     const edited = {
@@ -219,7 +559,7 @@ function makeEditor(bell) {
       label: form.elements.label.value.trim(),
       time: form.elements.time.value,
       days: [...form.querySelectorAll('input[name=day]:checked')].map((box) => box.value),
-      sound: select.value,
+      sound: form.elements.sound.value,
       volume: Number(form.elements.volume.value),
     };
     const others = state.bells.filter((b) => !bell || b.id !== bell.id);
@@ -235,6 +575,7 @@ function makeEditor(bell) {
 function renderBells() {
   const rows = state.bells.map((bell) => (bell.id === editingId ? makeEditor(bell) : makeBellRow(bell)));
   if (editingId === 'new') rows.push(makeEditor(null));
+  if (!rows.length) rows.push(h('div', { class: 'empty' }, 'No bells yet. Upload a sound, then add a bell.'));
   $('#bell-list').replaceChildren(...rows);
 }
 
@@ -253,19 +594,24 @@ async function deleteBell(bell) {
   await refresh();
 }
 
+// ---- Schedules: sounds ----
 function formatDuration(seconds) {
   if (seconds === null) return 'unreadable';
   const s = Math.round(seconds);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return `${Math.floor(s / 60)}:${pad(s % 60)}`;
 }
 
 function renderSounds() {
-  $('#sound-list').replaceChildren(...state.sounds.map((sound) => {
-    const row = fill('#sound-row', { name: sound.name, duration: formatDuration(sound.seconds) });
-    row.querySelector('[data-action=play]').onclick = () => run(() => play(sound.name));
-    row.querySelector('[data-action=delete]').onclick = () => run(() => deleteSound(sound.name));
-    return row;
-  }));
+  const rows = state.sounds.map((sound) => h('div', { class: 'row', style: 'grid-template-columns:minmax(0,1fr) auto auto' },
+    h('div', { style: 'overflow-wrap:anywhere' }, sound.name),
+    h('div', { class: 'sub' }, formatDuration(sound.seconds)),
+    h('div', { class: 'row-actions' },
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Play', title: 'Play',
+        onclick: () => run(() => play(sound.name)) }, '▶'),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Delete', title: 'Delete',
+        onclick: () => run(() => deleteSound(sound.name)) }, '✕'))));
+  if (!rows.length) rows.push(h('div', { class: 'empty' }, 'No sounds yet.'));
+  $('#sound-list').replaceChildren(...rows);
 }
 
 async function play(sound, volume) {
@@ -347,11 +693,15 @@ async function upload(file) {
   }
 }
 
+// ---- Wiring ----
+$('#ring-now').onclick = () => run(async () => { await api('POST', '/api/ring', {}); await refresh(); });
+$('#test-tone').onclick = () => run(async () => { await api('POST', '/api/test-tone', {}); await refresh(); });
+$('#hold').onclick = () => run(async () => { await api('PUT', '/api/settings', { held: !state.held }); await refresh(); });
 $('#enabled').onchange = () => run(async () => {
   await api('PUT', '/api/settings', { enabled: $('#enabled').checked });
   await refresh();
 });
-$('#master-volume').oninput = () => { $('#master-volume-value').textContent = $('#master-volume').value; };
+$('#master-volume').oninput = () => { $('#master-volume-value').textContent = `${$('#master-volume').value}%`; };
 $('#master-volume').onchange = () => run(async () => {
   await api('PUT', '/api/settings', { master_volume: Number($('#master-volume').value) });
   await refresh();
@@ -365,10 +715,12 @@ $('#upload-input').onchange = () => {
   $('#upload-input').value = '';
   if (file) run(() => upload(file));
 };
+window.addEventListener('hashchange', showTab);
 
+showTab();
 run(refresh);
 setInterval(() => { if (!document.hidden) run(refresh); }, 2000);
-setInterval(renderClock, 1000);
+setInterval(() => { if (state) renderTick(); }, 1000);
 </script>
 </body>
 </html>
