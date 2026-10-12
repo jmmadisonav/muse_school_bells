@@ -866,9 +866,21 @@ function timeParts(time) {
 let selectedId = null;  // schedule shown on the Schedules tab; defaults to today's
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// The schedule shown on the Schedules tab. It's pinned once chosen, so the schedule in use
+// changing (another user, Follow dates, a range starting) never moves an open editor.
 function selectedSchedule() {
-  return state.schedules.find((s) => s.id === selectedId)
-    || state.schedules.find((s) => s.id === state.active_schedule.id);
+  let selected = state.schedules.find((s) => s.id === selectedId);
+  if (!selected) {
+    // First render, or the selected schedule was deleted: show today's, with no editor open.
+    if (selectedId !== null) {
+      draft = null;
+      menuId = null;
+      confirmId = null;
+    }
+    selected = state.schedules.find((s) => s.id === state.active_schedule.id);
+    selectedId = selected.id;
+  }
+  return selected;
 }
 
 const scheduleBells = () => selectedSchedule().bells;
@@ -974,23 +986,23 @@ async function newSchedule() {
   const name = prompt('Name for the new schedule, for example Summer');
   if (!name) return;
   const created = await api('POST', '/api/schedules', { name });
-  selectedId = created.id;
   await scheduleAction(async () => {});
+  selectSchedule(created.id);
 }
 
 async function duplicateSchedule(schedule) {
   const name = prompt(`Name for the copy of ${schedule.name}`, `Copy of ${schedule.name}`);
   if (!name) return;
   const created = await api('POST', '/api/schedules', { name, copy_from: schedule.id });
-  selectedId = created.id;
   await scheduleAction(async () => {});
+  selectSchedule(created.id);
 }
 
 async function deleteSchedule(schedule) {
   if (!confirm(`Delete the ${schedule.name} schedule and its ${schedule.bells.length} bells? This can’t be undone.`)) return;
   await api('DELETE', `/api/schedules/${encodeURIComponent(schedule.id)}`);
-  selectedId = null;
   await scheduleAction(async () => {});
+  selectSchedule(state.active_schedule.id);
 }
 
 function redrawBells() {

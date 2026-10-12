@@ -396,3 +396,22 @@ def test_skip_next_finds_the_next_date_its_schedule_is_active(tmp_path, log):
     [b] = store.set_bells([bell(label='Summer recess')], schedule_id=summer['id'])
     # After 11:00 on Thursday 30 April, Summer isn't active again until Thursday 1 October.
     assert store.set_skip(b['id'], True, datetime(2026, 4, 30, 12, 0))['skip_on'] == '2026-10-01'
+
+
+def test_skip_next_on_a_schedule_never_in_use_is_refused(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    spare = store.create_schedule('Spare')  # no range and not the default, so it never applies
+    [b] = store.set_bells([bell()], schedule_id=spare['id'])
+    with pytest.raises(ValidationError, match='Spare'):
+        store.set_skip(b['id'], True, MON_1100)
+    assert store.bells(spare['id'])[0]['skip_on'] is None
+
+
+def test_deleting_a_ranged_schedule_clears_a_manual_pick(tmp_path, log):
+    store = bells.Store(str(tmp_path / 'bells.json'), log)
+    term = store.create_schedule('Term')
+    summer = store.create_schedule('Summer')
+    store.update_schedule(term['id'], {'range': {'from': '10-01', 'to': '12-01'}})
+    store.set_active(summer['id'], date(2026, 10, 12))
+    store.delete_schedule(term['id'])
+    assert store.get()['override'] is None

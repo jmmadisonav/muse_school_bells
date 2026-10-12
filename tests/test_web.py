@@ -366,4 +366,7 @@ def test_ring_and_skip_find_bells_in_any_schedule(app):
     summer = call(app, 'POST', '/api/schedules', {'name': 'Summer'})[1]
     [b] = call(app, 'PUT', '/api/bells?schedule=%s' % summer['id'], {'bells': [RECESS]})[1]['bells']
     assert call(app, 'POST', '/api/play', {'bell': b['id']})[0] == 200
+    # Summer has no range and isn't the default, so it never applies: nothing to skip.
+    assert call(app, 'POST', '/api/bells/%s/skip' % b['id'], {'skip': True})[0] == 400
+    call(app, 'PUT', '/api/schedules/%s' % summer['id'], {'range': {'from': '10-01', 'to': '04-30'}})
     assert call(app, 'POST', '/api/bells/%s/skip' % b['id'], {'skip': True})[0] == 200

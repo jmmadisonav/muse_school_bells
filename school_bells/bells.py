@@ -428,12 +428,17 @@ class Store:
             raise ValidationError('skip must be true or false')
         with self._lock:
             new = copy.deepcopy(self._state)
-            _, bell = find_bell(new, bell_id)
+            schedule, bell = find_bell(new, bell_id)
             if bell is None:
                 raise KeyError(bell_id)
-            # On a held day, today's ring won't happen anyway, so skip the next real one.
-            bell['skip_on'] = (next_occurrence(bell, now, from_tomorrow=is_held(new, now), state=new)
-                               if skip else None)
+            skip_on = None
+            if skip:
+                # On a held day, today's ring won't happen anyway, so skip the next real one.
+                skip_on = next_occurrence(bell, now, from_tomorrow=is_held(new, now), state=new)
+                if skip_on is None:
+                    raise ValidationError("The %s schedule isn't in use on any coming date, "
+                                          'so there is no ring to skip.' % schedule['name'])
+            bell['skip_on'] = skip_on
             self._commit(new)
             return copy.deepcopy(bell)
 
@@ -504,7 +509,8 @@ class Store:
                                       'Make another schedule the default first.')
             new = copy.deepcopy(self._state)
             new['schedules'] = [s for s in new['schedules'] if s['id'] != schedule_id]
-            if new['override'] and new['override']['schedule'] == schedule_id:
+            # Removing a range changes which schedule the dates give, like editing one does.
+            if new['override'] and (new['override']['schedule'] == schedule_id or schedule['range']):
                 new['override'] = None
             self._commit(new)
 
