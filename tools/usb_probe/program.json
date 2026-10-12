@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.amx.com/schema/amx-mojo-program-1.0.json",
+  ".metadata": {
+    "id": "usb_probe",
+    "name": "usb_probe",
+    "provider": "python",
+    "script": "main.py",
+    "disabled": false,
+    "description": "Diagnostic: lists USB devices, sound support, and libusb access on the controller"
+  }
+}
