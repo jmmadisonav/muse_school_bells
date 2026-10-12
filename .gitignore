@@ -4,6 +4,6 @@ __pycache__/
 *.wav.tmp
 bells_probe_marker.txt
 .venv/
-.local/
+.local
 .superpowers/
 AMX MUSE, Programming Guide, rev_1-7.pdf
