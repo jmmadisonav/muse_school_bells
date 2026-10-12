@@ -7,6 +7,7 @@ import ctypes.util
 import glob
 import os
 import threading
+import time
 import wave
 from datetime import datetime
 
@@ -128,6 +129,7 @@ def _supports_format(setting):
 
 
 def _unmute(handle, device, usb1):
+    units = []
     # SET_CUR on the mute control of each feature unit, for the master and both
     # channels. Controls a unit doesn't have are rejected, which is fine.
     for config in device:
@@ -138,12 +140,39 @@ def _unmute(handle, device, usb1):
                 for d in _class_descriptors(setting.getExtra()):
                     if d[2] != 0x06 or len(d) <= 3:  # FEATURE_UNIT
                         continue
+                    units.append((setting.getNumber(), d[3]))
                     for channel in (0, 1, 2):
                         try:
                             handle.controlWrite(0x21, 0x01, 0x0100 | channel,
                                                 (d[3] << 8) | setting.getNumber(), b'\x00')
                         except usb1.USBError:
                             pass
+    return units
+
+
+def _diagnose(handle, setting, units, rate_set):
+    """Diagnostic (temporary): the adapter's settings as it reports them back."""
+    def read(request_type, request, value, index, length):
+        try:
+            return handle.controlRead(request_type, request, value, index, length)
+        except Exception:
+            return None
+
+    def db(raw):
+        return '-' if raw is None or len(raw) < 2 else '%.1f' % (int.from_bytes(raw[:2], 'little', signed=True) / 256)
+
+    alt = read(0x81, 0x0A, 0, setting['interface'], 1)  # GET_INTERFACE
+    rate = read(0xA2, 0x81, 0x0100, setting['endpoint'], 3)  # GET_CUR sampling frequency
+    parts = ['interface %d alt %d (reads %s)' % (setting['interface'], setting['alt'], alt[0] if alt else '-'),
+             'rate set %s, reads %s' % (rate_set, int.from_bytes(rate, 'little') if rate else '-')]
+    for interface, unit in units:
+        index = (unit << 8) | interface
+        mutes = [read(0xA1, 0x81, 0x0100 | ch, index, 1) for ch in (0, 1, 2)]
+        volumes = [db(read(0xA1, 0x81, 0x0200 | ch, index, 2)) for ch in (0, 1, 2)]
+        low, high = db(read(0xA1, 0x82, 0x0201, index, 2)), db(read(0xA1, 0x83, 0x0201, index, 2))
+        parts.append('unit %d: mute %s, volume %s dB (range %s..%s)' % (
+            unit, '/'.join(str(m[0]) if m else '-' for m in mutes), '/'.join(volumes), low, high))
+    return 'Audio open: ' + '; '.join(parts)
 
 
 class _Session:
@@ -155,7 +184,7 @@ class _Session:
         self._setting = setting
 
     @classmethod
-    def open(cls):
+    def open(cls, log=None):
         usb1 = _load_usb1()
         usb = usb1.USBContext()
         try:
@@ -169,12 +198,15 @@ class _Session:
             s = matches[0]
             handle.claimInterface(s['interface'])
             handle.setInterfaceAltSetting(s['interface'], s['alt'])
+            rate_set = 'ok'
             try:
                 # SET_CUR sampling frequency on the endpoint.
                 handle.controlWrite(0x22, 0x01, 0x0100, s['endpoint'], sounds.RATE.to_bytes(3, 'little'))
-            except usb1.USBError:
-                pass  # single-rate devices reject this request
-            _unmute(handle, device, usb1)
+            except usb1.USBError as e:
+                rate_set = 'rejected (%s)' % e  # single-rate devices reject this request
+            units = _unmute(handle, device, usb1)
+            if log is not None:
+                log.info(_diagnose(handle, s, units, rate_set))
             return cls(usb, handle, s)
         except AudioError:
             usb.close()
@@ -251,7 +283,7 @@ class Player:
             except (OSError, wave.Error, EOFError) as e:
                 raise AudioError('Cannot read %s (%s)' % (os.path.basename(path), e))
             try:
-                session = _Session.open()
+                session = _Session.open(self._log)
             except Exception:
                 wav.close()
                 raise
@@ -276,7 +308,17 @@ class Player:
     def _run(self, session, wav, gain, stop):
         name = self._playing
         try:
-            errors = session.stream(iter_chunks(wav.readframes, gain), stop)
+            # Diagnostic (temporary): count what was streamed, and how long it took.
+            started, sent = time.monotonic(), [0]
+
+            def counted(chunks):
+                for data, sizes in chunks:
+                    sent[0] += len(sizes)
+                    yield data, sizes
+
+            errors = session.stream(counted(iter_chunks(wav.readframes, gain)), stop)
+            self._log.info('Audio stream: %s, %d packets in %.2f s, %d failed' % (
+                name, sent[0], time.monotonic() - started, errors))
             self.last_playback = {'time': datetime.now().isoformat(timespec='seconds'),
                                   'failed_transfers': errors}
             if errors:

@@ -74,7 +74,7 @@ def test_player_records_last_playback_and_clears_playing(tmp_path, log, monkeypa
     path = tmp_path / 'a.wav'
     path.write_bytes(make_wav(0.1))
     session = FakeSession()
-    monkeypatch.setattr(audio._Session, 'open', classmethod(lambda cls: session))
+    monkeypatch.setattr(audio._Session, 'open', classmethod(lambda cls, log=None: session))
     player = audio.Player(log)
     assert player.last_playback is None
     player.play(str(path), 1.0)
