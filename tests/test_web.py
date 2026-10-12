@@ -298,3 +298,13 @@ def test_schedule_changes_are_logged(app):
     assert results == ['disabled', 'enabled', 'skip_set', 'skip_cleared', 'held', 'bells_off', 'resumed']
     skip = next(e for e in entries if e['result'] == 'skip_set')
     assert (skip['source'], skip['label'], skip['detail']) == ('page', 'Recess', '2026-10-12')
+
+
+def test_ring_now_for_a_specific_bell(app):
+    upload(app, 'recess.wav', make_wav(0.1))
+    call(app, 'PUT', '/api/bells', {'bells': [dict(RECESS, id='r1')]})
+    assert call(app, 'POST', '/api/play', {'bell': 'r1'}) == (200, {'playing': 'recess.wav'})
+    assert round(app.player.plays[-1][1], 2) == 0.4
+    entry = call(app, 'GET', '/api/history')[1]['entries'][0]
+    assert (entry['source'], entry['label'], entry['result']) == ('ring_now', 'Recess', 'played')
+    assert call(app, 'POST', '/api/play', {'bell': 'nope'})[0] == 404

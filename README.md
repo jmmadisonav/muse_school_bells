@@ -226,3 +226,15 @@ controller.
   they rest on.
 - `docs/superpowers/plans/2026-10-12-school-bells-web.md` is the
   implementation plan.
+
+## License
+
+The code is available under the MIT License. See [LICENSE](LICENSE).
+
+These third-party assets are included under their own terms, not the MIT
+License:
+
+- The Hurme Geometric Sans 1 fonts in `school_bells/static/fonts/` and
+  `design/`. Their licence is pageview-capped and covers only Madison Group
+  Enterprises' own use. Don't redistribute them.
+- The Madison Group Enterprises design system and design handoff in `design/`.

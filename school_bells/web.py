@@ -289,7 +289,18 @@ def make_server(port, store, player, sounds_dir, static_dir, log, clock=datetime
         def _play(self):
             body = self._read_json()
             if not isinstance(body, dict):
-                raise bells.ValidationError('Body must be {"sound": "<name>"}')
+                raise bells.ValidationError('Body must be {"sound": "<name>"} or {"bell": "<id>"}')
+            if 'bell' in body:
+                # Ring a specific bell now: its sound at its volume, logged as Ring now.
+                state = store.get()
+                bell = next((b for b in state['bells'] if b['id'] == body['bell']), None)
+                if bell is None:
+                    return self._error(404, 'No bell with id %s' % body['bell'])
+                if not sounds.sound_exists(sounds_dir, bell['sound']):
+                    return self._error(404, 'Sound %s does not exist' % bell['sound'])
+                gain = state['master_volume'] / 100 * bell['volume'] / 100
+                return self._play_logged('ring_now', os.path.join(sounds_dir, bell['sound']), gain,
+                                         bell['sound'], label=bell['label'] or bell['time'])
             name = body.get('sound')
             if not sounds.sound_exists(sounds_dir, name):
                 return self._error(404, 'Sound %s does not exist' % name)
