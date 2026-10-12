@@ -289,6 +289,24 @@
     .sch-editor .span2 { grid-column: 1 / -1; }
   }
 
+  /* Schedules: bar and settings */
+  .sch-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 24px 35px 0; align-items: center; }
+  .sch-pill { border: 1px solid var(--light); background: var(--white); padding: 8px 14px 6px; font-family: var(--font);
+    font-size: 15px; color: var(--dark); cursor: pointer; display: flex; gap: 8px; align-items: center; transition: all 200ms; }
+  .sch-pill:hover { border-color: var(--dark); }
+  .sch-pill.selected { border-color: var(--dark); box-shadow: inset 0 -3px 0 var(--red); }
+  .sch-pill .range { font-size: 12px; color: var(--muted); }
+  .sch-settings { margin: 16px 35px 0; padding: 16px 20px; background: #f4f5f5; border: 1px solid var(--light);
+    display: flex; flex-wrap: wrap; gap: 16px 20px; align-items: flex-end; }
+  .sf { display: flex; flex-direction: column; gap: 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--grey); }
+  .sf input[type="text"], .sf select { padding: 9px 10px; border: 1px solid #c9ccd0; background: var(--white); font-size: 15px;
+    color: var(--dark); border-radius: 0; text-transform: none; letter-spacing: 0; min-height: 0; }
+  .sf .toggle { text-transform: none; letter-spacing: 0; font-size: 13px; }
+  .sf-note { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--grey); padding: 9px 0; }
+  .range-fields { display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; }
+  .sch-actions { padding: 0; margin-left: auto; }
+  @media (max-width: 760px) { .sch-bar { padding: 16px 16px 0; } .sch-settings { margin: 12px 16px 0; } .sch-actions { margin-left: 0; } }
+
   /* Footer */
   .site-footer { background: var(--dark); color: var(--muted); border-bottom: 20px solid var(--red); }
   .site-footer .wrap { padding-top: 12px; padding-bottom: 12px; display: flex; justify-content: space-between;
@@ -382,6 +400,8 @@
   <main>
     <div class="wrap grid">
       <section class="sch-bells">
+        <div class="sch-bar" id="schedule-bar"></div>
+        <div class="sch-settings" id="schedule-settings"></div>
         <div class="sch-head">
           <div>
             <h2>Bells<span class="dot">.</span></h2>
@@ -435,6 +455,7 @@
           <tr><td>enabled</td><td>param</td><td>Scheduled bells on or off</td></tr>
           <tr><td>master_volume</td><td>param</td><td>Output level, 0 to 100</td></tr>
           <tr><td>held</td><td>param</td><td>Hold bells for the rest of today</td></tr>
+          <tr><td>active_schedule</td><td>param</td><td>Schedule in use; set a name, or auto</td></tr>
           <tr><td>playing</td><td>read-only</td><td>Sound playing now, or empty</td></tr>
           <tr><td>next_bell</td><td>read-only</td><td>Next bell, such as Mon 11:00 Recess</td></tr>
           <tr><td>last_error</td><td>read-only</td><td>Latest bell or command error</td></tr>
@@ -663,6 +684,7 @@ function render() {
   renderTick();
   renderHeroControls();
   renderAdapterPanels();
+  renderScheduleBar();
   renderBells();
   renderSounds();
   $('#enabled .sw').classList.toggle('on', state.enabled);
@@ -747,7 +769,9 @@ function renderToday(now) {
   const day = DAYS[weekdayIndex(now)];
   const current = hhmm(now);
   const todays = state.bells.filter((bell) => bell.days.includes(day));
-  $('#today-meta').textContent = `Weekday timetable · ${todays.length} ${todays.length === 1 ? 'bell' : 'bells'}`;
+  const inUse = state.active_schedule;
+  $('#today-meta').textContent = `${inUse.name} schedule${inUse.manual ? ' (picked by hand)' : ''} · `
+    + `${todays.length} ${todays.length === 1 ? 'bell' : 'bells'}`;
   $('#today-off').hidden = state.enabled;
   if (!todays.length) {
     if (changed('today', 'empty')) $('#today-rows').replaceChildren(h('div', { class: 'empty' }, 'No bells today.'));
@@ -838,6 +862,137 @@ function timeParts(time) {
   return suffix ? [clock, h('small', {}, suffix)] : [clock];
 }
 
+// ---- Schedules ----
+let selectedId = null;  // schedule shown on the Schedules tab; defaults to today's
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function selectedSchedule() {
+  return state.schedules.find((s) => s.id === selectedId)
+    || state.schedules.find((s) => s.id === state.active_schedule.id);
+}
+
+const scheduleBells = () => selectedSchedule().bells;
+const allBells = () => state.schedules.flatMap((s) => s.bells);
+
+function fmtMonthDay(monthDay) {
+  const [month, day] = monthDay.split('-').map(Number);
+  return `${day} ${MONTHS[month - 1]}`;
+}
+
+function rangeText(schedule) {
+  if (schedule.default) return 'When no date range applies';
+  return schedule.range ? `${fmtMonthDay(schedule.range.from)} – ${fmtMonthDay(schedule.range.to)}` : 'No date range';
+}
+
+function selectSchedule(id) {
+  selectedId = id;
+  draft = null;
+  menuId = null;
+  confirmId = null;
+  rendered.bells = null;
+  rendered.scheduleBar = null;
+  render();
+}
+
+async function scheduleAction(action) {
+  await action();
+  rendered.scheduleBar = null;
+  await refresh();
+}
+
+function renderScheduleBar() {
+  const selected = selectedSchedule();
+  if (!changed('scheduleBar', [state.schedules.map(({ bells, ...s }) => [s, bells.length]), selected.id,
+    state.active_schedule])) return;
+  const active = state.active_schedule;
+  $('#schedule-bar').replaceChildren(
+    ...state.schedules.map((s) => h('button', { type: 'button', class: `sch-pill${s.id === selected.id ? ' selected' : ''}`,
+      'aria-pressed': String(s.id === selected.id), onclick: () => selectSchedule(s.id) },
+      h('span', {}, s.name),
+      s.id === active.id ? h('span', { class: 'pill next' }, active.manual ? 'Active · by hand' : 'Active') : null,
+      s.default ? h('span', { class: 'pill dupe' }, 'Default') : null,
+      h('span', { class: 'range' }, rangeText(s)))),
+    h('button', { type: 'button', class: 'link-btn', onclick: () => run(newSchedule) }, '+ New schedule'));
+  renderScheduleSettings(selected);
+}
+
+function monthDaySelects(value) {
+  const [month, day] = (value || '01-01').split('-').map(Number);
+  const months = h('select', { 'aria-label': 'Month' }, MONTHS.map((m, i) => new Option(m, pad(i + 1))));
+  months.value = pad(month);
+  const days = h('select', { 'aria-label': 'Day' }, Array.from({ length: 31 }, (_, i) => new Option(String(i + 1), pad(i + 1))));
+  days.value = pad(day);
+  return { node: h('div', { class: 'time-input' }, days, months), read: () => `${months.value}-${days.value}` };
+}
+
+function renderScheduleSettings(schedule) {
+  const active = state.active_schedule;
+  const errorNode = h('span', { class: 'editor-error', role: 'alert' });
+  const name = h('input', { type: 'text', maxlength: '40', 'aria-label': 'Schedule name' });
+  name.value = schedule.name;
+  const useRange = h('input', schedule.range ? { type: 'checkbox', checked: '' } : { type: 'checkbox' });
+  const from = monthDaySelects(schedule.range && schedule.range.from);
+  const to = monthDaySelects(schedule.range ? schedule.range.to : '12-31');
+  const rangeFields = h('div', { class: 'range-fields' }, from.node, h('span', {}, 'to'), to.node);
+  const syncRange = () => { rangeFields.hidden = !useRange.checked; };
+  useRange.onchange = syncRange;
+  syncRange();
+  const save = () => run(async () => {
+    const changes = { name: name.value };
+    if (!schedule.default) changes.range = useRange.checked ? { from: from.read(), to: to.read() } : null;
+    try {
+      await scheduleAction(() => api('PUT', `/api/schedules/${encodeURIComponent(schedule.id)}`, changes));
+    } catch (error) {
+      errorNode.textContent = error.message;
+    }
+  });
+  let useButton = null;
+  if (schedule.id !== active.id) {
+    useButton = h('button', { type: 'button', title: 'Use this schedule until the dates next change it',
+      onclick: () => run(() => scheduleAction(() => api('PUT', '/api/settings', { active_schedule: schedule.id }))) }, 'Use now');
+  } else if (active.manual) {
+    useButton = h('button', { type: 'button', title: 'Go back to the schedule the dates choose',
+      onclick: () => run(() => scheduleAction(() => api('PUT', '/api/settings', { active_schedule: null }))) }, 'Follow dates');
+  }
+  $('#schedule-settings').replaceChildren(
+    h('label', { class: 'sf' }, 'Name', name),
+    schedule.default
+      ? h('div', { class: 'sf' }, 'Dates', h('span', { class: 'sf-note' }, 'Default: used on days no date range covers'))
+      : h('div', { class: 'sf' }, h('label', { class: 'toggle' }, useRange, 'Date range, every year'), rangeFields),
+    h('button', { type: 'button', class: 'btn red small', onclick: save }, 'Save schedule'),
+    h('div', { class: 'row-menu sch-actions' },
+      useButton,
+      h('button', { type: 'button', onclick: () => run(() => duplicateSchedule(schedule)) }, 'Duplicate'),
+      schedule.default ? null : h('button', { type: 'button',
+        onclick: () => run(() => scheduleAction(() => api('PUT', `/api/schedules/${encodeURIComponent(schedule.id)}`, { default: true }))) },
+        'Make default'),
+      schedule.default ? null : h('button', { type: 'button', class: 'danger', onclick: () => run(() => deleteSchedule(schedule)) }, 'Delete')),
+    errorNode);
+}
+
+async function newSchedule() {
+  const name = prompt('Name for the new schedule, for example Summer');
+  if (!name) return;
+  const created = await api('POST', '/api/schedules', { name });
+  selectedId = created.id;
+  await scheduleAction(async () => {});
+}
+
+async function duplicateSchedule(schedule) {
+  const name = prompt(`Name for the copy of ${schedule.name}`, `Copy of ${schedule.name}`);
+  if (!name) return;
+  const created = await api('POST', '/api/schedules', { name, copy_from: schedule.id });
+  selectedId = created.id;
+  await scheduleAction(async () => {});
+}
+
+async function deleteSchedule(schedule) {
+  if (!confirm(`Delete the ${schedule.name} schedule and its ${schedule.bells.length} bells? This can’t be undone.`)) return;
+  await api('DELETE', `/api/schedules/${encodeURIComponent(schedule.id)}`);
+  selectedId = null;
+  await scheduleAction(async () => {});
+}
+
 function redrawBells() {
   rendered.bells = null;
   renderBells();
@@ -859,7 +1014,7 @@ function previewButton(sound, volume, big) {
 function overlapFor(bell, durations) {
   if (!bell.enabled) return null;
   const endSeconds = toMinutes(bell.time) * 60 + (durations[bell.sound] || 0);
-  const later = state.bells.find((other) => other.enabled && other.time > bell.time
+  const later = scheduleBells().find((other) => other.enabled && other.time > bell.time
     && other.days.some((day) => bell.days.includes(day)));
   return later && endSeconds > toMinutes(later.time) * 60 ? later : null;
 }
@@ -961,12 +1116,12 @@ async function saveDraft(errorNode) {
   if (!label) return fail('Give the bell a name.');
   if (!draft.days.length) return fail('Pick at least one day.');
   if (!draft.sound) return fail('Upload a sound first.');
-  const others = state.bells.filter((b) => b.id !== draft.id);
+  const others = scheduleBells().filter((b) => b.id !== draft.id);
   if (others.some((b) => b.time === draft.time && b.days.some((day) => draft.days.includes(day)))) {
     return fail(`Another bell already rings at ${fmtTime(draft.time)}.`);
   }
   // Take on/off and skip from the latest state, so a change made elsewhere while editing isn't undone.
-  const current = state.bells.find((b) => b.id === draft.id);
+  const current = scheduleBells().find((b) => b.id === draft.id);
   const edited = { label, time: draft.time, days: draft.days, sound: draft.sound, volume: draft.volume,
     enabled: current ? current.enabled : true, skip_on: current ? current.skip_on : null };
   if (current) edited.id = current.id;
@@ -1023,22 +1178,25 @@ function makeTimeInput(value, onchange) {
 
 function renderBells() {
   const today = clockBase ? isoDate(controllerNow()) : '';
-  const next = state.next_bell && state.next_bell.date === today ? state.next_bell : null;
-  const on = state.bells.filter((b) => b.enabled).length;
-  let summary = `${on} of ${state.bells.length} bells on`;
-  if (!state.enabled) summary += ' · scheduled bells off';
+  const selected = selectedSchedule();
+  const inUse = selected.id === state.active_schedule.id;
+  const next = inUse && state.next_bell && state.next_bell.date === today ? state.next_bell : null;
+  const on = scheduleBells().filter((b) => b.enabled).length;
+  let summary = `${selected.name} · ${on} of ${scheduleBells().length} bells on`;
+  if (!inUse) summary += ' · not in use today';
+  else if (!state.enabled) summary += ' · scheduled bells off';
   else if (state.held) summary += ' · held for today';
   else if (next) summary += ` · next ${fmtTime(next.time)} ${next.label}`;
   else summary += ' · no more bells today';
   $('#bells-summary').textContent = summary;
-  if (!changed('bells', [state.bells, state.sounds, state.time_format, state.enabled, next && next.id,
+  if (!changed('bells', [selected.id, scheduleBells(), state.sounds, state.time_format, state.enabled, next && next.id,
     state.playing, menuId, confirmId, draft && draft.id, today])) return;
   const counts = {};
-  state.bells.forEach((b) => { if (b.label) counts[b.label] = (counts[b.label] || 0) + 1; });
+  scheduleBells().forEach((b) => { if (b.label) counts[b.label] = (counts[b.label] || 0) + 1; });
   const ctx = { today, nextId: next && next.id,
     durations: Object.fromEntries(state.sounds.map((s) => [s.name, s.seconds || 0])),
     dupes: new Set(Object.keys(counts).filter((label) => counts[label] > 1)) };
-  const rows = state.bells.map((bell) => makeBellRow(bell, ctx));
+  const rows = scheduleBells().map((bell) => makeBellRow(bell, ctx));
   if (draft && draft.isNew) rows.unshift(h('div', { class: 'sch-item editing' }, makeEditor()));
   if (!rows.length) rows.push(h('div', { class: 'empty', style: 'padding:14px 35px' }, 'No bells yet. Upload a sound, then add a bell.'));
   $('#bell-list').replaceChildren(...rows);
@@ -1046,7 +1204,7 @@ function renderBells() {
 
 async function setEnabled(bell, enabled) {
   try {
-    await saveBells(state.bells.map((b) => (b.id === bell.id ? { ...b, enabled } : b)));
+    await saveBells(scheduleBells().map((b) => (b.id === bell.id ? { ...b, enabled } : b)));
   } finally {
     rendered.bells = null;  // rebuild from the controller's state, so a failed save doesn't leave the switch wrong
     await refresh();
@@ -1059,11 +1217,12 @@ async function setSkip(id, skip) {
 }
 
 function saveBells(list) {
-  return api('PUT', '/api/bells', { bells: list.map(({ missing_sound, ...bell }) => bell) });
+  return api('PUT', `/api/bells?schedule=${encodeURIComponent(selectedSchedule().id)}`,
+    { bells: list.map(({ missing_sound, ...bell }) => bell) });
 }
 
 async function deleteBell(bell) {
-  await saveBells(state.bells.filter((b) => b.id !== bell.id));
+  await saveBells(scheduleBells().filter((b) => b.id !== bell.id));
   confirmId = null;
   await refresh();
 }
@@ -1078,9 +1237,9 @@ function formatDuration(seconds) {
 function renderSounds() {
   const count = state.sounds.length;
   $('#sound-count').textContent = `${count} ${count === 1 ? 'file' : 'files'}`;
-  if (!changed('sounds', [state.sounds, state.bells.map((b) => b.sound), state.playing])) return;
+  if (!changed('sounds', [state.sounds, allBells().map((b) => b.sound), state.playing])) return;
   const rows = state.sounds.map((sound) => {
-    const used = state.bells.filter((b) => b.sound === sound.name).length;
+    const used = allBells().filter((b) => b.sound === sound.name).length;
     return h('div', { class: 'snd-row' },
       previewButton(sound.name, undefined, true),
       h('div', { style: 'min-width:0' },
@@ -1105,6 +1264,9 @@ function logResult(entry) {
   if (entry.result === 'failed') return `Failed: ${entry.error}`;
   if (entry.result === 'skipped') return 'Skipped';
   if (entry.result === 'skip_set') return entry.detail ? `Skip set for ${fmtDate(entry.detail)}` : 'Skip set';
+  if (entry.result === 'schedule_changed') {
+    return entry.detail === 'manual' ? 'Schedule picked by hand' : 'Schedule changed by date';
+  }
   return CHANGES[entry.result] || 'Played';
 }
 
@@ -1123,7 +1285,7 @@ async function loadLog() {
     }
     const what = [entry.label, entry.sound].filter(Boolean).join(' · ') || 'All bells';
     const result = logResult(entry);
-    const change = entry.result === 'skip_set' || entry.result in CHANGES;
+    const change = entry.result === 'skip_set' || entry.result === 'schedule_changed' || entry.result in CHANGES;
     nodes.push(h('div', { class: `log-row ${entry.result}${change ? ' change' : ''}` },
       h('div', { class: 't' }, fmtTime(time.slice(0, 8))),
       h('div', { style: 'overflow-wrap:anywhere' }, what),

@@ -8,6 +8,10 @@ MUSE programs can control it through touch points.
 ## Features
 
 - **Weekly timetable:** set a time, weekdays, sound, and volume for each bell.
+- **Multiple schedules:** keep separate timetables, such as Summer and Winter.
+  Each can have a yearly date range, and the program switches between them
+  on those dates. A default schedule covers any other day, and staff can pick
+  a schedule by hand until the dates next change it.
 - **Playback controls:**
   - Ring now plays the next bell.
   - A built-in 1 kHz test tone checks the speakers.
@@ -106,7 +110,7 @@ The page has five tabs:
 | Tab | What you can do |
 |---|---|
 | **Today** | See the next bell and a countdown, ring the next bell now, play the test tone, hold or resume today's bells, and skip upcoming bells. |
-| **Schedules** | Add, edit, and delete bells. Turn bells on or off, skip a bell's next ring, upload sounds, and switch all bells off. |
+| **Schedules** | Create schedules such as Summer and Winter, set their date ranges, and pick one by hand. Add, edit, and delete each schedule's bells. Turn bells on or off, skip a bell's next ring, upload sounds, and switch all bells off. |
 | **Device** | Set the master volume, stop playback, check the adapter, and see the touch-point list. |
 | **Log** | Review the last 30 days of playback and schedule changes. |
 | **Preferences** | Choose a 12-hour or 24-hour time format. |
@@ -150,6 +154,7 @@ bells.listen('bell_rang', lambda event: print(event.arguments))
 | `enabled` | Param, boolean | Turns all scheduled bells on or off. |
 | `master_volume` | Param, integer, 0 to 100 | Sets the output level. |
 | `held` | Param, boolean | Holds bells for the rest of today. |
+| `active_schedule` | Param, string | The schedule in use. Set a schedule's name to pick it by hand, or `auto` to follow the dates. |
 | `playing` | Param, string, read-only | The sound playing now, or empty. |
 | `next_bell` | Param, string, read-only | The next bell, in 24-hour time, or empty. |
 | `last_error` | Param, string, read-only | The latest bell or command error. |
@@ -169,9 +174,12 @@ with `{"error": "<message>"}`.
 | Method and path | Purpose |
 |---|---|
 | `GET /api/state` | The clock, settings, bells, sounds, playback, next bell, and adapter status. |
-| `PUT /api/bells` | Replaces the bell list. |
+| `PUT /api/bells?schedule=<id>` | Replaces a schedule's bells. Without `schedule`, it edits the schedule in use today. |
+| `POST /api/schedules` | Creates a schedule from `{"name"}`, or copies one with `{"name", "copy_from": "<id>"}`. |
+| `PUT /api/schedules/<id>` | Changes a schedule's `name`, yearly `range` (`{"from": "MM-DD", "to": "MM-DD"}`), or `default`. |
+| `DELETE /api/schedules/<id>` | Deletes a schedule other than the default. |
 | `POST /api/bells/<id>/skip` | Sets (`{"skip": true}`) or clears (`{"skip": false}`) a bell's skip. |
-| `PUT /api/settings` | Sets any of `enabled`, `master_volume`, `held`, and `time_format`. |
+| `PUT /api/settings` | Sets any of `enabled`, `master_volume`, `held`, `time_format`, and `active_schedule` (a schedule id, or `null` to follow the dates). |
 | `POST /api/sounds?name=<name>.wav` | Uploads a 48 kHz, 16-bit stereo WAV file, up to 50 MB. Add `&overwrite=1` to replace a sound. |
 | `DELETE /api/sounds/<name>` | Deletes a sound that no bell uses. |
 | `POST /api/play` | Plays `{"sound": "<name>", "volume": 0-100}`. The volume is optional. |
