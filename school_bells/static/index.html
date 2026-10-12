@@ -66,6 +66,7 @@
   .note { font-size: 13px; color: var(--muted); }
 
   /* Panels */
+  [data-page] { flex: 1; display: flex; flex-direction: column; }  /* footer stays at the bottom */
   main { flex: 1; background: var(--light); }
   .grid { padding-top: 24px; padding-bottom: 24px; display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 20px; align-items: start; }
@@ -158,6 +159,29 @@
     body.fit [data-page="today"] .stack { min-height: 0; overflow-y: auto; }
   }
 
+  /* Round 2: per-bell controls, time entry, log */
+  .row.today { grid-template-columns: 72px minmax(0, 1fr) auto 64px; }
+  .row.off { color: var(--muted); }
+  .link-btn { background: none; border: none; font: inherit; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--grey); cursor: pointer; text-align: right; padding: 4px 0; transition: color 200ms; }
+  .link-btn:hover { color: var(--red); }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--grey); cursor: pointer; }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--red); margin: 0; }
+  .time-input { display: flex; align-items: center; gap: 6px; }
+  .time-input select { min-width: 64px; }
+  .editor .time-field { grid-column: span 2; }
+  .full { grid-column: 1 / -1; }
+  .log-day { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--grey); padding: 16px 15px 6px; }
+  .log-row { display: grid; grid-template-columns: 96px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 20px;
+    padding: 7px 15px; border-top: 1px solid var(--light); font-size: 14px; }
+  .log-row .t { font-variant-numeric: tabular-nums; }
+  .log-row .src { color: var(--grey); }
+  .log-row.failed .res { color: var(--red); }
+  .log-row.skipped .res { color: var(--muted); }
+  @media (max-width: 700px) { .log-row { grid-template-columns: 72px minmax(0, 1fr); row-gap: 2px; } }
+  .choice { display: flex; align-items: center; gap: 10px; padding: 6px 0; cursor: pointer; }
+  .choice input { width: 18px; height: 18px; accent-color: var(--red); margin: 0; }
+
   /* Footer */
   .site-footer { background: var(--dark); color: var(--muted); border-bottom: 20px solid var(--red); }
   .site-footer .wrap { padding-top: 12px; padding-bottom: 12px; display: flex; justify-content: space-between;
@@ -181,6 +205,8 @@
       <a href="#today" data-tab="today">Today</a>
       <a href="#schedules" data-tab="schedules">Schedules</a>
       <a href="#device" data-tab="device">Device</a>
+      <a href="#log" data-tab="log">Log</a>
+      <a href="#preferences" data-tab="preferences">Preferences</a>
     </div>
   </nav>
 </header>
@@ -296,10 +322,38 @@
   </main>
 </div>
 
+<!-- Log -->
+<div data-page="log" hidden>
+  <main>
+    <div class="wrap grid">
+      <div class="panel full corner">
+        <div class="panel-head">
+          <h2>Bell log<span class="dot">.</span></h2>
+          <div class="meta">Every playback in the last 30 days</div>
+        </div>
+        <div id="log-list"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Preferences -->
+<div data-page="preferences" hidden>
+  <main>
+    <div class="wrap grid" style="grid-template-columns:minmax(0,520px)">
+      <div class="panel corner">
+        <h3>Time format<span class="dot">.</span></h3>
+        <label class="choice"><input type="radio" name="time-format" value="24h"> <span>24-hour (13:45)</span></label>
+        <label class="choice"><input type="radio" name="time-format" value="12h"> <span>12-hour (1:45 pm)</span></label>
+        <p class="note" style="margin:12px 0 0">Applies to everyone who uses this page.</p>
+      </div>
+    </div>
+  </main>
+</div>
+
 <footer class="site-footer">
   <div class="wrap">
     <span>school_bells · MUSE Python program · This page has no login. Keep it on a restricted network.</span>
-    <span>Madison Group Enterprises</span>
   </div>
 </footer>
 
@@ -315,6 +369,28 @@ let state = null;
 let editingId = null;  // id of the bell being edited, 'new' for a new bell, or null
 let clockBase = null;  // { serverMs, localMs, offsetMs } from the latest state
 let shownNextIndex = null;  // NEXT row last scrolled into view on the Today tab
+let currentTab = 'today';
+const rendered = {};  // last signature per list, so rows (and their buttons) rebuild only on change
+
+// Rebuild a list only when its content changes; rebuilding every tick would eat clicks.
+function changed(key, value) {
+  const signature = JSON.stringify(value);
+  if (rendered[key] === signature) return false;
+  rendered[key] = signature;
+  return true;
+}
+
+// Format a 24-hour 'HH:MM' or 'HH:MM:SS' string in the chosen time format.
+function fmtTime(value) {
+  if (!state || state.time_format !== '12h') return value;
+  const [hours, minutes, seconds] = value.split(':');
+  const hour = Number(hours);
+  return `${hour % 12 || 12}:${minutes}${seconds ? `:${seconds}` : ''} ${hour < 12 ? 'am' : 'pm'}`;
+}
+
+function fmtDate(iso) {
+  return dateFromIso(iso).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
 
 // Builds an element without innerHTML, so labels and names can't inject markup.
 function h(tag, attrs = {}, ...children) {
@@ -387,7 +463,9 @@ function dateFromIso(iso, time = '00:00') {
 // ---- Tabs ----
 function showTab() {
   const tab = (location.hash || '#today').slice(1);
-  const known = ['today', 'schedules', 'device'].includes(tab) ? tab : 'today';
+  const known = ['today', 'schedules', 'device', 'log', 'preferences'].includes(tab) ? tab : 'today';
+  currentTab = known;
+  if (known === 'log' && state) run(loadLog);
   document.querySelectorAll('[data-page]').forEach((page) => { page.hidden = page.dataset.page !== known; });
   document.body.classList.toggle('fit', known === 'today');
   document.querySelectorAll('[data-tab]').forEach((link) => {
@@ -409,13 +487,16 @@ function render() {
     $('#master-volume-value').textContent = `${state.master_volume}%`;
   }
   $('#stop').disabled = !state.playing;
+  document.querySelectorAll('input[name=time-format]').forEach((radio) => {
+    radio.checked = radio.value === state.time_format;
+  });
 }
 
 // Everything that changes with the clock; runs every second.
 function renderTick() {
   if (!clockBase) return;
   const now = controllerNow();
-  $('#clock').textContent = now.toISOString().slice(11, 19);
+  $('#clock').textContent = fmtTime(now.toISOString().slice(11, 19));
   renderIndicator();
   renderHero(now);
   renderToday(now);
@@ -443,7 +524,9 @@ function renderHero(now) {
     $('#hero-countdown').textContent = '';
     return;
   }
-  $('#hero-time').textContent = next.time;
+  const [heroTime, heroSuffix] = fmtTime(next.time).split(' ');
+  $('#hero-time').replaceChildren(heroTime,
+    heroSuffix ? h('span', { style: 'font-size:.35em;margin-left:.15em' }, heroSuffix) : '');
   if (next.date === today) {
     $('#hero-label').textContent = next.label || 'Bell';
     const seconds = Math.max(0, Math.round((dateFromIso(next.date, next.time) - now) / 1000));
@@ -464,7 +547,8 @@ function renderHeroControls() {
   $('#ringing').hidden = !state.playing;
   $('#ringing-label').textContent = state.playing ? `Ringing · ${state.playing}` : '';
   $('#ring-now').disabled = !state.ring_target || Boolean(state.playing);
-  $('#ring-now').title = state.ring_target ? `Plays ${state.ring_target.label || state.ring_target.time}` : 'No bells scheduled';
+  $('#ring-now').title = state.ring_target
+    ? `Plays ${state.ring_target.label || fmtTime(state.ring_target.time)}` : 'No bells scheduled';
   $('#test-tone').disabled = Boolean(state.playing);
   $('#hold').textContent = state.held ? 'Resume bells' : 'Hold bells';
   $('#hold-note').textContent = state.held
@@ -479,23 +563,38 @@ function renderToday(now) {
   $('#today-meta').textContent = `Weekday timetable · ${todays.length} ${todays.length === 1 ? 'bell' : 'bells'}`;
   $('#today-off').hidden = state.enabled;
   if (!todays.length) {
-    $('#today-rows').replaceChildren(h('div', { class: 'empty' }, 'No bells today.'));
+    if (changed('today', 'empty')) $('#today-rows').replaceChildren(h('div', { class: 'empty' }, 'No bells today.'));
     return;
   }
   const active = state.enabled && !state.held;
-  const nextIndex = active ? todays.findIndex((bell) => bell.time > current) : -1;
-  const list = $('#today-rows');
-  const scrollTop = list.scrollTop;  // emptying the list resets its scroll position
-  list.replaceChildren(...todays.map((bell, i) => {
+  const today = isoDate(now);
+  const rings = (bell) => bell.enabled && bell.skip_on !== today;
+  const nextIndex = active ? todays.findIndex((bell) => bell.time > current && rings(bell)) : -1;
+  const rows = todays.map((bell, i) => {
     const rung = bell.time <= current;
-    const isNext = i === nextIndex;
-    const tag = state.held && !rung ? 'Held' : isNext ? 'Next' : rung ? 'Rung' : '';
-    return h('div', { class: `row${rung ? ' rung' : ''}${isNext ? ' next' : ''}` },
-      h('div', { class: 't' }, bell.time),
-      h('div', {}, bell.label || '—'),
-      h('div', { class: 'tag' }, tag));
-  }));
-  list.scrollTop = scrollTop;
+    let tag = rung ? 'Rung' : '';
+    if (!bell.enabled) tag = 'Off';
+    else if (bell.skip_on === today) tag = 'Skipped';
+    else if (state.held && !rung) tag = 'Held';
+    else if (i === nextIndex) tag = 'Next';
+    const action = !rung && bell.enabled ? (bell.skip_on === today ? 'Undo' : 'Skip') : '';
+    return { id: bell.id, time: bell.time, label: bell.label, rung, next: i === nextIndex, tag, action,
+      off: !bell.enabled || bell.skip_on === today };
+  });
+  const list = $('#today-rows');
+  if (changed('today', [rows, state.time_format])) {
+    const scrollTop = list.scrollTop;  // emptying the list resets its scroll position
+    list.replaceChildren(...rows.map((row) => h('div',
+      { class: `row today${row.rung ? ' rung' : ''}${row.next ? ' next' : ''}${row.off && !row.rung ? ' off' : ''}` },
+      h('div', { class: 't' }, fmtTime(row.time)),
+      h('div', {}, row.label || '—'),
+      h('div', { class: 'tag' }, row.tag),
+      row.action
+        ? h('button', { type: 'button', class: 'link-btn', title: row.action === 'Skip' ? 'Skip this bell today' : 'Ring this bell again',
+          onclick: () => run(() => setSkip(row.id, row.action === 'Skip')) }, row.action)
+        : h('span'))));
+    list.scrollTop = scrollTop;
+  }
   // When the schedule scrolls inside its panel, keep the NEXT row in view as it moves.
   if (nextIndex !== shownNextIndex && document.body.classList.contains('fit')) {
     shownNextIndex = nextIndex;
@@ -508,7 +607,7 @@ function lastPlaybackText(last) {
   if (!last) return 'None yet';
   const today = clockBase ? isoDate(controllerNow()) : '';
   const [date, time] = last.time.split('T');
-  const when = date === today ? `Today ${time.slice(0, 5)}` : `${date} ${time.slice(0, 5)}`;
+  const when = date === today ? `Today ${fmtTime(time.slice(0, 5))}` : `${fmtDate(date)} ${fmtTime(time.slice(0, 5))}`;
   const n = last.failed_transfers;
   return `${when} · ${n} failed ${n === 1 ? 'transfer' : 'transfers'}`;
 }
@@ -536,12 +635,22 @@ function daysText(days) {
 
 function makeBellRow(bell) {
   const sound = bell.missing_sound ? `${bell.sound} (missing)` : bell.sound;
-  return h('div', { class: `row${bell.missing_sound ? ' missing' : ''}` },
-    h('div', { class: 't' }, bell.time),
+  const today = clockBase ? isoDate(controllerNow()) : '';
+  const skipping = bell.skip_on && bell.skip_on >= today;
+  let status = '';
+  if (!bell.enabled) status = '  ·  Off';
+  else if (skipping) status = `  ·  Skipping ${fmtDate(bell.skip_on)}`;
+  const toggle = h('input', bell.enabled ? { type: 'checkbox', checked: '' } : { type: 'checkbox' });
+  toggle.onchange = () => run(() => setEnabled(bell, toggle.checked));
+  return h('div', { class: `row${bell.missing_sound ? ' missing' : ''}${bell.enabled ? '' : ' off'}` },
+    h('div', { class: 't' }, fmtTime(bell.time)),
     h('div', {},
       h('div', {}, bell.label || '—'),
-      h('div', { class: 'sub' }, `${daysText(bell.days)}  ·  ${sound}  ·  ${bell.volume}%`)),
-    h('div', { class: 'row-actions' },
+      h('div', { class: 'sub' }, `${daysText(bell.days)}  ·  ${sound}  ·  ${bell.volume}%${status}`)),
+    h('div', { class: 'row-actions', style: 'align-items:center;gap:12px' },
+      h('label', { class: 'toggle', title: 'Turn this bell on or off' }, toggle, 'On'),
+      bell.enabled ? h('button', { type: 'button', class: 'link-btn',
+        onclick: () => run(() => setSkip(bell.id, !skipping)) }, skipping ? 'Undo skip' : 'Skip next') : null,
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Play', title: 'Play',
         onclick: () => run(() => play(bell.sound, bell.volume)) }, '▶'),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Edit', title: 'Edit',
@@ -551,10 +660,12 @@ function makeBellRow(bell) {
 }
 
 function makeEditor(bell) {
-  const draft = bell || { label: '', time: '08:00', days: DAYS.slice(0, 5), sound: '', volume: 100 };
+  const draft = bell || { label: '', time: '08:00', days: DAYS.slice(0, 5), sound: '', volume: 100,
+    enabled: true, skip_on: null };
   const volumeValue = h('output', {}, `${draft.volume}%`);
+  const timeInput = makeTimeInput(draft.time);
   const form = h('form', { class: 'editor' },
-    h('label', { class: 'field' }, h('span', {}, 'Time'), h('input', { name: 'time', type: 'time', required: '' })),
+    h('div', { class: 'field time-field' }, h('span', {}, 'Time'), timeInput.node),
     h('label', { class: 'field' }, h('span', {}, 'Label'),
       h('input', { name: 'label', type: 'text', maxlength: '60', placeholder: 'Recess' })),
     h('label', { class: 'field' }, h('span', {}, 'Sound'), h('select', { name: 'sound', required: '' },
@@ -569,8 +680,7 @@ function makeEditor(bell) {
     h('div', { class: 'actions' },
       h('button', { type: 'submit', class: 'btn red small' }, 'Save bell'),
       h('button', { type: 'button', class: 'btn outline-dark small',
-        onclick: () => { editingId = null; renderBells(); } }, 'Cancel')));
-  form.elements.time.value = draft.time;
+        onclick: () => { editingId = null; rendered.bells = null; renderBells(); } }, 'Cancel')));
   form.elements.label.value = draft.label;
   form.elements.volume.value = draft.volume;
   form.elements.volume.oninput = () => { volumeValue.textContent = `${form.elements.volume.value}%`; };
@@ -580,10 +690,12 @@ function makeEditor(bell) {
     const edited = {
       id: bell ? bell.id : undefined,
       label: form.elements.label.value.trim(),
-      time: form.elements.time.value,
+      time: timeInput.read(),
       days: [...form.querySelectorAll('input[name=day]:checked')].map((box) => box.value),
       sound: form.elements.sound.value,
       volume: Number(form.elements.volume.value),
+      enabled: draft.enabled,
+      skip_on: draft.skip_on,
     };
     const others = state.bells.filter((b) => !bell || b.id !== bell.id);
     run(async () => {
@@ -595,7 +707,31 @@ function makeEditor(bell) {
   return form;
 }
 
+// Hour and minute dropdowns (plus am/pm in 12-hour mode), so entry never depends on the
+// browser's region settings. read() returns 24-hour 'HH:MM'.
+function makeTimeInput(value) {
+  const [hours, minutes] = value.split(':').map(Number);
+  const twelve = state.time_format === '12h';
+  const hourValues = twelve ? Array.from({ length: 12 }, (_, i) => i + 1) : Array.from({ length: 24 }, (_, i) => i);
+  const hourSelect = h('select', { 'aria-label': 'Hour' },
+    hourValues.map((n) => new Option(twelve ? String(n) : pad(n), String(n))));
+  hourSelect.value = String(twelve ? hours % 12 || 12 : hours);
+  const minuteSelect = h('select', { 'aria-label': 'Minute' },
+    Array.from({ length: 60 }, (_, i) => new Option(pad(i), String(i))));
+  minuteSelect.value = String(minutes);
+  const ampmSelect = twelve ? h('select', { 'aria-label': 'am or pm' }, new Option('am', 'am'), new Option('pm', 'pm')) : null;
+  if (ampmSelect) ampmSelect.value = hours < 12 ? 'am' : 'pm';
+  const read = () => {
+    let hour = Number(hourSelect.value);
+    if (twelve) hour = (hour % 12) + (ampmSelect.value === 'pm' ? 12 : 0);
+    return `${pad(hour)}:${pad(Number(minuteSelect.value))}`;
+  };
+  return { node: h('div', { class: 'time-input' }, hourSelect, h('span', {}, ':'), minuteSelect, ampmSelect), read };
+}
+
 function renderBells() {
+  if (!changed('bells', [state.bells, state.sounds.map((s) => s.name), state.time_format, editingId,
+    clockBase ? isoDate(controllerNow()) : ''])) return;
   const rows = state.bells.map((bell) => (bell.id === editingId ? makeEditor(bell) : makeBellRow(bell)));
   if (editingId === 'new') rows.push(makeEditor(null));
   if (!rows.length) rows.push(h('div', { class: 'empty' }, 'No bells yet. Upload a sound, then add a bell.'));
@@ -604,7 +740,18 @@ function renderBells() {
 
 function openEditor(id) {
   editingId = id;
+  rendered.bells = null;
   renderBells();
+}
+
+async function setEnabled(bell, enabled) {
+  await saveBells(state.bells.map((b) => (b.id === bell.id ? { ...b, enabled } : b)));
+  await refresh();
+}
+
+async function setSkip(id, skip) {
+  await api('POST', `/api/bells/${encodeURIComponent(id)}/skip`, { skip });
+  await refresh();
 }
 
 function saveBells(list) {
@@ -612,7 +759,7 @@ function saveBells(list) {
 }
 
 async function deleteBell(bell) {
-  if (!confirm(`Delete the ${bell.time} ${bell.label} bell?`)) return;
+  if (!confirm(`Delete the ${fmtTime(bell.time)} ${bell.label} bell?`)) return;
   await saveBells(state.bells.filter((b) => b.id !== bell.id));
   await refresh();
 }
@@ -625,6 +772,7 @@ function formatDuration(seconds) {
 }
 
 function renderSounds() {
+  if (!changed('sounds', state.sounds)) return;
   const rows = state.sounds.map((sound) => h('div', { class: 'row', style: 'grid-template-columns:minmax(0,1fr) auto auto' },
     h('div', { style: 'overflow-wrap:anywhere' }, sound.name),
     h('div', { class: 'sub' }, formatDuration(sound.seconds)),
@@ -635,6 +783,35 @@ function renderSounds() {
         onclick: () => run(() => deleteSound(sound.name)) }, '✕'))));
   if (!rows.length) rows.push(h('div', { class: 'empty' }, 'No sounds yet.'));
   $('#sound-list').replaceChildren(...rows);
+}
+
+const SOURCES = { scheduled: 'Scheduled', ring_now: 'Ring now', test_tone: 'Test tone', page: 'Played from page',
+  touch_point: 'Other program' };
+
+async function loadLog() {
+  const { entries } = await api('GET', '/api/history');
+  if (!changed('log', [entries, state && state.time_format])) return;
+  const today = clockBase ? isoDate(controllerNow()) : '';
+  const yesterday = clockBase ? isoDate(new Date(controllerNow().getTime() - 86400000)) : '';
+  const nodes = [];
+  let lastDay = null;
+  for (const entry of entries) {
+    const [day, time] = entry.time.split('T');
+    if (day !== lastDay) {
+      lastDay = day;
+      nodes.push(h('div', { class: 'log-day' }, day === today ? 'Today' : day === yesterday ? 'Yesterday' : fmtDate(day)));
+    }
+    const what = entry.label ? `${entry.label} · ${entry.sound}` : entry.sound;
+    const result = entry.result === 'failed' ? `Failed: ${entry.error}`
+      : entry.result === 'skipped' ? 'Skipped' : 'Played';
+    nodes.push(h('div', { class: `log-row ${entry.result}` },
+      h('div', { class: 't' }, fmtTime(time.slice(0, 8))),
+      h('div', { style: 'overflow-wrap:anywhere' }, what),
+      h('div', { class: 'src' }, SOURCES[entry.source] || entry.source),
+      h('div', { class: 'res' }, result)));
+  }
+  if (!nodes.length) nodes.push(h('div', { class: 'empty' }, 'Nothing has played in the last 30 days.'));
+  $('#log-list').replaceChildren(...nodes);
 }
 
 async function play(sound, volume) {
@@ -738,12 +915,20 @@ $('#upload-input').onchange = () => {
   $('#upload-input').value = '';
   if (file) run(() => upload(file));
 };
+document.querySelectorAll('input[name=time-format]').forEach((radio) => {
+  radio.onchange = () => run(async () => {
+    await api('PUT', '/api/settings', { time_format: radio.value });
+    await refresh();
+    if (currentTab === 'log') await loadLog();
+  });
+});
 window.addEventListener('hashchange', showTab);
 
 showTab();
-run(refresh);
+run(async () => { await refresh(); if (currentTab === 'log') await loadLog(); });
 setInterval(() => { if (!document.hidden) run(refresh); }, 2000);
 setInterval(() => { if (state) renderTick(); }, 1000);
+setInterval(() => { if (currentTab === 'log' && !document.hidden) run(loadLog); }, 5000);
 </script>
 </body>
 </html>
