@@ -5,6 +5,9 @@ weekly timetable. It plays sounds through a USB audio adapter plugged into the
 controller. You manage it from a web page that the program serves, and other
 MUSE programs can control it through touch points.
 
+This is experimental code. It hasn't been thoroughly tested, and it isn't a
+supported configuration.
+
 ## Features
 
 - **Weekly timetable:** set a time, weekdays, sound, and volume for each bell.
